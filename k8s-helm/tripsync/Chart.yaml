@@ -1,0 +1,5 @@
+apiVersion: v2
+name: tripsync
+description: TripSync - offline-first trip planner
+version: 0.1.0
+appVersion: "0.1.0"

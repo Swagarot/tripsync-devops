@@ -1,0 +1,15 @@
+backend:
+  image:
+    repository: tripsync-backend
+    tag: latest
+  port: 5000
+  replicaCount: 1
+
+frontend:
+  image:
+    repository: tripsync-frontend
+    tag: latest
+  port: 80
+  replicaCount: 1
+
+namespace: tripsync
