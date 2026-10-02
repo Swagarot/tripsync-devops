@@ -1,7 +1,11 @@
+# Two separate Ingress objects on purpose: annotations like rewrite-target
+# apply to EVERY path in an Ingress. If "/" shared the /api rewrite, its
+# empty $2 would rewrite every frontend request (JS, CSS, favicon) to "/",
+# and nginx would serve index.html for all of them.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: tripsync-ingress
+  name: tripsync-api-ingress
   namespace: {{ .Values.namespace }}
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
@@ -18,6 +22,17 @@ spec:
                 name: tripsync-backend
                 port:
                   number: {{ .Values.backend.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tripsync-ingress
+  namespace: {{ .Values.namespace }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
           - path: /
             pathType: Prefix
             backend:
