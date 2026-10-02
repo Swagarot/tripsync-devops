@@ -1,13 +1,13 @@
 backend:
   image:
-    repository: tripsync-backend
+    repository: swagarot/tripsync-backend
     tag: latest
   port: 5000
   replicaCount: 1
 
 frontend:
   image:
-    repository: tripsync-frontend
+    repository: swagarot/tripsync-frontend
     tag: latest
   port: 80
   replicaCount: 1
