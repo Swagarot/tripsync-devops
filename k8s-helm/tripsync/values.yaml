@@ -1,4 +1,7 @@
 backend:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
   image:
     repository: swagarot/tripsync-backend
     tag: latest
@@ -6,6 +9,9 @@ backend:
   replicaCount: 1
 
 frontend:
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
   image:
     repository: swagarot/tripsync-frontend
     tag: latest

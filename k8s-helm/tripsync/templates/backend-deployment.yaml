@@ -18,3 +18,22 @@ spec:
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
           ports:
             - containerPort: {{ .Values.backend.port }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          # Probes hit the pod directly (kubelet -> container port), not through
+          # the ingress, so the paths have no /api prefix.
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: {{ .Values.backend.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: {{ .Values.backend.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+            
