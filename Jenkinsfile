@@ -1,6 +1,10 @@
 pipeline {
     agent { label 'k3s-agent' }
 
+    environment {
+        REGISTRY_USER = 'swagarot'
+    }
+
     stages {
         stage('Verify tooling') {
             steps {
@@ -10,10 +14,68 @@ pipeline {
             }
         }
 
-        stage('Verify cluster access') {
+        stage('Checkout app') {
             steps {
-                sh 'kubectl get nodes'
+                dir('app') {
+                    git branch: 'main',
+                        credentialsId: 'github-creds',
+                        url: 'https://github.com/Swagarot/tripsync-app.git'
+                }
             }
+        }
+
+        stage('Set image tag') {
+            steps {
+                script {
+                    env.IMAGE_TAG = sh(
+                        script: 'git -C app rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+                    echo "Image tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Build images') {
+            steps {
+                sh '''
+                    docker build -t $REGISTRY_USER/tripsync-backend:$IMAGE_TAG app/backend
+                    docker build -t $REGISTRY_USER/tripsync-frontend:$IMAGE_TAG app/frontend
+                '''
+            }
+        }
+
+        stage('Push images') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DH_USER',
+                    passwordVariable: 'DH_TOKEN')]) {
+                    sh '''
+                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
+                        docker push $REGISTRY_USER/tripsync-backend:$IMAGE_TAG
+                        docker push $REGISTRY_USER/tripsync-frontend:$IMAGE_TAG
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    helm upgrade tripsync k8s-helm/tripsync -n default \
+                      --set-string backend.image.tag=$IMAGE_TAG \
+                      --set-string frontend.image.tag=$IMAGE_TAG \
+                      --atomic --timeout 3m
+                    kubectl get pods -n tripsync
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker logout || true'
         }
     }
 }
