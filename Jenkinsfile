@@ -24,6 +24,35 @@ pipeline {
             }
         }
 
+
+                stage('Lint (Code Tests)') {
+            parallel {
+                stage('Helm chart') {
+                    steps {
+                        sh 'helm lint k8s-helm/tripsync'
+                    }
+                }
+                stage('Backend (flake8)') {
+                    steps {
+                        sh '''
+                            docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp \
+                              -v "$PWD/app/backend:/src" -w /src python:3.11-slim \
+                              sh -c "pip install --user -q flake8 && python -m flake8 . --max-line-length=120"
+                        '''
+                    }
+                }
+                stage('Frontend (eslint)') {
+                    steps {
+                        sh '''
+                            docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp \
+                              -v "$PWD/app/frontend:/src" -w /src node:20-alpine \
+                              sh -c "npm ci && npm run lint"
+                        '''
+                    }
+                }
+            }
+        }
+
         stage('Set image tag') {
             steps {
                 script {
