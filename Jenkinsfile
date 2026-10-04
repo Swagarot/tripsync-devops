@@ -18,7 +18,7 @@ pipeline {
             steps {
                 dir('app') {
                     git branch: 'main',
-                        credentialsId: 'github-creds',
+                        credentialsId: '6daea266-02fa-4ffd-ad67-4ab97eec3938',
                         url: 'https://github.com/Swagarot/tripsync-app.git'
                 }
             }
