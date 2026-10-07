@@ -70,7 +70,13 @@ Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 `--set` flags of that one command. A backend deploy that only sets the backend
 tag would reset the frontend tag to `latest`. The planned fix is
 `--reset-then-reuse-values` (needs Helm 3.14+, verify with `helm version`), so
-each pipeline changes only its own tag. Not yet tested.
+each pipeline changes only its own tag. Tested and working: after a backend
+deploy then a frontend deploy, both pods kept their own SHA tags. The two tags
+differ by design (each is the SHA of its own repo).
+
+Both Deploy stages wrap `helm upgrade` in `lock('tripsync-release') { ... }`
+(Lockable Resources plugin), because the two jobs share one Helm release and a
+concurrent upgrade fails with "another operation is in progress".
 
 Lint gotchas: run containers as `-u $(id -u):$(id -g) -e HOME=/tmp` so files
 aren't root-owned in the workspace. flake8 uses `--max-line-length=120`; files
