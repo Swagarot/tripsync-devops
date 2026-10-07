@@ -50,8 +50,9 @@ Jest stage); Week 8 export, sync, polish, final review.
 
 Single-user only; no Google Places API (stops entered manually); no full offline
 tile prefetch (Workbox opportunistic caching only); export is PDF + Google Maps
-link only (no GPX/KML); no GitOps controller (Jenkins deploys directly); Jenkins
-stays outside Kubernetes by design.
+link only (no GPX/KML); Jenkins stays outside Kubernetes by design. GitOps with
+Argo CD is an **optional ~4h stretch sprint** after the core plan (it can be pulled
+forward after Week 4); until then Jenkins deploys directly.
 
 ## Pipelines (design)
 
