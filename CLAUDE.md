@@ -22,7 +22,7 @@ the what.
 |---|---|
 | `tripsync-backend` | Flask API, Dockerfile, tests, **Jenkinsfile** |
 | `tripsync-frontend` | Vite + React PWA, Dockerfile, `nginx.conf`, tests, **Jenkinsfile** |
-| `tripsync-devops` (this repo) | `k8s-helm/tripsync/` chart, `terraform/k3s`, `terraform/aws`, this file. `docker-compose.yml` and monitoring configs are to be added |
+| `tripsync-devops` (this repo) | `k8s-helm/tripsync/` chart, `terraform/k3s`, `terraform/aws`, `docker-compose.yml` + `compose/gateway.conf`, this file. Monitoring configs are to be added |
 
 `tripsync-app` is the old combined repo. Backend and frontend were split out of
 it with `git subtree split` (history kept). Keep it until both new pipelines
@@ -37,8 +37,19 @@ k3s; Jenkins controller + agent; one working single pipeline (lint, build, push,
 deploy with commit-SHA tags); Terraform for AWS written and `plan` validated
 (**EKS commented out, nothing applied**).
 
-In progress (Week 3): write the backend and frontend Jenkinsfiles, create two
-Jenkins jobs with SCM polling, move compose here, retire the old job and repo.
+Week 3 done: backend and frontend Jenkinsfiles, two Jenkins jobs triggered by
+SCM polling (verified), shared deploy lock, compose moved here.
+
+In progress (Week 3): retire the old single job, the root `Jenkinsfile` and the
+`tripsync-app` repo.
+
+Compose (`docker-compose.yml`, local dev only, not used by any pipeline):
+builds from the sibling repos (`../tripsync-backend`, `../tripsync-frontend`)
+and adds a `gateway` nginx (`compose/gateway.conf`) on `localhost:8080` that
+mimics the two Ingresses: `/api/` to the backend with the prefix stripped,
+everything else to the frontend. Without it the frontend's relative `/api` calls
+hit `try_files` and get `index.html`. **Not yet tested** (no Docker on the
+laptop); test it in Week 6 when a `postgres` service is added for local dev.
 
 Then: Week 4 AWS EKS deployment (ECR, ingress-nginx on EKS, pipelines get a
 target parameter); Week 5 observability (Prometheus, Grafana, Loki,

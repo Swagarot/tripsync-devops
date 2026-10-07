@@ -1,0 +1,27 @@
+# Local dev stack. Expects the app repos cloned next to this one:
+#   tripsync repos/
+#     tripsync-backend/
+#     tripsync-frontend/
+#     tripsync-devops/     <- run "docker compose up --build" here
+# Open http://localhost:8080
+services:
+  backend:
+    build: ../tripsync-backend      # backend/Dockerfile in the sibling repo
+    image: tripsync-backend:local   # local tag, never pushed
+
+  frontend:
+    build: ../tripsync-frontend
+    image: tripsync-frontend:local
+
+  # Plays the role of the Ingress: one entry point that splits /api from the
+  # rest. Services reach each other by service name (backend, frontend) on
+  # compose's default network, the same way Kubernetes Services work by name.
+  gateway:
+    image: nginx:alpine
+    volumes:
+      - ./compose/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"                   # host_port:container_port
+    depends_on:
+      - backend
+      - frontend
