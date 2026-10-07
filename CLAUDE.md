@@ -34,8 +34,10 @@ been removed; it is still in git history.
 Done: local Docker/compose skeleton; Terraform k3s namespace; Helm chart
 (deployments, services, split ingress, probes, resource limits); ingress-nginx on
 k3s; Jenkins controller + agent; a single combined pipeline (lint, build, push,
-deploy with commit-SHA tags), since replaced by the two per-repo pipelines; Terraform for AWS written and `plan` validated
-(**EKS commented out, nothing applied**).
+deploy with commit-SHA tags), since replaced by the two per-repo pipelines; Terraform for AWS applied and proven end to end: EKS cluster,
+ingress-nginx, and both pipelines deployed to EKS through the `TARGET` parameter,
+with the app loading through the AWS load balancer. **EKS is destroyed between
+sessions** and must be rebuilt for each test (see the Week 4 list below).
 
 Week 3 done: backend and frontend Jenkinsfiles, two Jenkins jobs triggered by
 SCM polling (verified), shared deploy lock, compose moved here, old single job
@@ -49,8 +51,18 @@ everything else to the frontend. Without it the frontend's relative `/api` calls
 hit `try_files` and get `index.html`. **Not yet tested** (no Docker on the
 laptop); test it in Week 6 when a `postgres` service is added for local dev.
 
-Then: Week 4 AWS EKS deployment (ECR, ingress-nginx on EKS, pipelines get a
-target parameter); Week 5 observability (Prometheus, Grafana, Loki,
+Week 4 remaining (EKS is rebuilt for each test):
+1. Write my own minimal VPC module (spec below) to replace the community VPC module.
+2. Terraform the in-cluster pieces that are currently manual: the `tripsync`
+   namespace, ingress-nginx as a `helm_release`, and the Jenkins access entry via
+   the EKS module's `access_entries`.
+3. Make a fresh cluster pipeline-ready: `helm upgrade --install`, and push a
+   `:latest` tag next to the SHA tag (a fresh install has no tags to reuse, so the
+   frontend would otherwise pull a missing `latest` and `--atomic` would roll back).
+4. Clean-slate test: destroy, apply, run both pipelines with no manual steps.
+Optional: move EKS images to ECR.
+
+Then: Week 5 observability (Prometheus, Grafana, Loki,
 Alertmanager); Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,
 Jest stage); Week 8 export, sync, polish, final review.
@@ -72,8 +84,13 @@ Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 3. Unit tests (pytest / Jest) — added in Weeks 6 and 7
 4. Build the image, tag = short Git SHA of **that app repo**
 5. Push to Docker Hub (`swagarot/tripsync-backend`, `swagarot/tripsync-frontend`)
-6. Deploy: `helm upgrade tripsync k8s-helm/tripsync -n default --atomic
-   --timeout 3m --set-string <service>.image.tag=$IMAGE_TAG`
+6. Deploy: `helm upgrade tripsync k8s-helm/tripsync --atomic
+   --set-string <service>.image.tag=$IMAGE_TAG`, branching on the `TARGET`
+   parameter (choices `k3s` default, `eks`; polling builds always use k3s):
+   - `k3s`: release in namespace `default`, using the agent's own kubeconfig.
+   - `eks`: AWS credentials injected with `withCredentials`, a **separate**
+     kubeconfig written into the workspace (`aws eks update-kubeconfig
+     --kubeconfig "$WORKSPACE/kubeconfig-eks"`), release in namespace `tripsync`.
 
 **Important:** `helm upgrade` recomputes values from `values.yaml` plus the
 `--set` flags of that one command. A backend deploy that only sets the backend
@@ -135,13 +152,58 @@ SCM polling.
 - Credentials in the Jenkins store: the GitHub token, whose ID is an
   auto-generated UUID (not `github-creds`; copy it from the existing
   Jenkinsfiles; fine-grained tokens must be granted **each repo** the pipelines
-  read), and `dockerhub-creds` (Docker Hub access token). Reference them by ID,
-  never inline.
+  read), `dockerhub-creds` (Docker Hub access token), and `aws-access-key-id` /
+  `aws-secret-access-key` (secret text, for the separate `jenkins-eks` IAM user,
+  injected only in the EKS deploy branch). Reference them by ID, never inline.
 - Use `--password-stdin` for `docker login`, triple-single-quote `sh` blocks that
   touch secrets, and `docker logout` in `post { always }`.
 - Controller needs git installed (the job config's repo check runs there); the
   agent needs git for checkout.
 - Built-in node executors should be 0 so nothing builds on the controller.
+
+## EKS facts (learned the hard way)
+
+- Cluster `tripsync-cluster`, region `eu-central-1`, Kubernetes **1.35** (standard
+  support until March 2027; versions past standard support bill $0.60/hr for the
+  control plane instead of $0.10, so check the EKS version calendar before bumping).
+- The AWS account is on the **Free Plan**: EC2 instance types are restricted.
+  `t3.medium` is NOT allowed (the node group just sat in "creating" with no
+  instance). Use `c7i-flex.large` (2 vCPU, 4 GiB) or another type listed by
+  `aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`.
+- Jenkins deploys with a **separate IAM user** (`jenkins-eks`, `eks:DescribeCluster`
+  only) plus an EKS **access entry** (namespace-scoped `AmazonEKSEditPolicy` on
+  `tripsync`). The access entry is created outside Terraform today and is lost on
+  destroy; it must be recreated or moved into Terraform.
+- A fresh EKS cluster has no ingress-nginx and no `tripsync` namespace. Today both
+  are created by hand, and the first install is manual
+  (`helm upgrade --install` with both tags), because `helm upgrade` needs an
+  existing release.
+- EKS pulls the public Docker Hub images (no ECR yet) through the NAT gateway.
+- **Teardown order:** `helm uninstall` the app, `helm uninstall ingress-nginx`
+  (this deletes the AWS load balancer Kubernetes created, which Terraform doesn't
+  know about), wait until `aws elb describe-load-balancers` and
+  `aws elbv2 describe-load-balancers` are empty, then `terraform destroy`. A
+  leftover load balancer makes the VPC delete fail with `DependencyViolation`.
+  Anything created by controllers inside the cluster (load balancers, EBS volumes
+  from PVCs) must be removed from inside the cluster first.
+- Cost: the control plane, NAT gateway, node and load balancer all bill hourly.
+  Never leave EKS running unattended.
+
+## Planned minimal VPC module (`terraform/aws/modules/vpc`)
+
+Resources (about 16): `aws_vpc` (enable BOTH `enable_dns_support` and
+`enable_dns_hostnames`), `aws_internet_gateway`, 2 public `aws_subnet`
+(`map_public_ip_on_launch = true`), 2 private `aws_subnet`, `aws_eip`,
+`aws_nat_gateway` (in a **public** subnet), 2 `aws_route_table` (public, private),
+2 `aws_route` (public 0.0.0.0/0 to the IGW; private 0.0.0.0/0 to the NAT gateway),
+4 `aws_route_table_association`. Tag public subnets
+`kubernetes.io/role/elb = 1` and private subnets `kubernetes.io/role/internal-elb = 1`
+(verify the exact tag names in the EKS docs).
+
+Variables: `name`, `vpc_cidr`, `azs`, `public_subnet_cidrs`, `private_subnet_cidrs`,
+`enable_nat_gateway` (the "size down" switch), `tags`. Create subnets with
+`count = length(var.azs)`. Outputs: `vpc_id`, `public_subnet_ids`,
+`private_subnet_ids`, named so the EKS block's `module.vpc.vpc_id` still works.
 
 ## Terraform and AWS
 
