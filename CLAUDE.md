@@ -24,24 +24,22 @@ the what.
 | `tripsync-frontend` | Vite + React PWA, Dockerfile, `nginx.conf`, tests, **Jenkinsfile** |
 | `tripsync-devops` (this repo) | `k8s-helm/tripsync/` chart, `terraform/k3s`, `terraform/aws`, `docker-compose.yml` + `compose/gateway.conf`, this file. Monitoring configs are to be added |
 
-`tripsync-app` is the old combined repo. Backend and frontend were split out of
-it with `git subtree split` (history kept). Keep it until both new pipelines
-work, then retire it. The `Jenkinsfile` at the root of this repo is the legacy
-single pipeline and is to be removed at the same time.
+`tripsync-app` is the old combined repo, now **archived** (read-only). Backend
+and frontend were split out of it with `git subtree split` (history kept). The
+legacy single-pipeline `Jenkinsfile` that lived at the root of this repo has
+been removed; it is still in git history.
 
 ## Status
 
 Done: local Docker/compose skeleton; Terraform k3s namespace; Helm chart
 (deployments, services, split ingress, probes, resource limits); ingress-nginx on
-k3s; Jenkins controller + agent; one working single pipeline (lint, build, push,
-deploy with commit-SHA tags); Terraform for AWS written and `plan` validated
+k3s; Jenkins controller + agent; a single combined pipeline (lint, build, push,
+deploy with commit-SHA tags), since replaced by the two per-repo pipelines; Terraform for AWS written and `plan` validated
 (**EKS commented out, nothing applied**).
 
 Week 3 done: backend and frontend Jenkinsfiles, two Jenkins jobs triggered by
-SCM polling (verified), shared deploy lock, compose moved here.
-
-In progress (Week 3): retire the old single job, the root `Jenkinsfile` and the
-`tripsync-app` repo.
+SCM polling (verified), shared deploy lock, compose moved here, old single job
+disabled, root `Jenkinsfile` removed, `tripsync-app` archived.
 
 Compose (`docker-compose.yml`, local dev only, not used by any pipeline):
 builds from the sibling repos (`../tripsync-backend`, `../tripsync-frontend`)
