@@ -117,9 +117,11 @@ SCM polling.
   systemd service `jenkins-agent` under the unprivileged user `jenkins` (no sudo).
   Has Java 21, Docker, kubectl, helm, git and Tailscale. Its kubeconfig is at
   `/home/jenkins/.kube/config`. Admin work uses a separate sudo user.
-- Credentials in the Jenkins store: `github-creds` (GitHub token; fine-grained
-  tokens must be granted **each repo** the pipelines read) and `dockerhub-creds`
-  (Docker Hub access token). Reference them by ID, never inline.
+- Credentials in the Jenkins store: the GitHub token, whose ID is an
+  auto-generated UUID (not `github-creds`; copy it from the existing
+  Jenkinsfiles; fine-grained tokens must be granted **each repo** the pipelines
+  read), and `dockerhub-creds` (Docker Hub access token). Reference them by ID,
+  never inline.
 - Use `--password-stdin` for `docker login`, triple-single-quote `sh` blocks that
   touch secrets, and `docker logout` in `post { always }`.
 - Controller needs git installed (the job config's repo check runs there); the
