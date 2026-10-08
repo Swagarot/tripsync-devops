@@ -191,19 +191,48 @@ SCM polling.
 
 ## Planned minimal VPC module (`terraform/aws/modules/vpc`)
 
-Resources (about 16): `aws_vpc` (enable BOTH `enable_dns_support` and
-`enable_dns_hostnames`), `aws_internet_gateway`, 2 public `aws_subnet`
-(`map_public_ip_on_launch = true`), 2 private `aws_subnet`, `aws_eip`,
-`aws_nat_gateway` (in a **public** subnet), 2 `aws_route_table` (public, private),
-2 `aws_route` (public 0.0.0.0/0 to the IGW; private 0.0.0.0/0 to the NAT gateway),
-4 `aws_route_table_association`. Tag public subnets
-`kubernetes.io/role/elb = 1` and private subnets `kubernetes.io/role/internal-elb = 1`
-(verify the exact tag names in the EKS docs).
+Being written by Roye step by step (coached, not generated). Design decision:
+**2 public subnets + 1 private subnet** (cheaper and simpler than 2 private).
 
-Variables: `name`, `vpc_cidr`, `azs`, `public_subnet_cidrs`, `private_subnet_cidrs`,
-`enable_nat_gateway` (the "size down" switch), `tags`. Create subnets with
-`count = length(var.azs)`. Outputs: `vpc_id`, `public_subnet_ids`,
-`private_subnet_ids`, named so the EKS block's `module.vpc.vpc_id` still works.
+Resources (about 14): `aws_vpc` (enable BOTH `enable_dns_support` and
+`enable_dns_hostnames`), `aws_internet_gateway`, 2 public `aws_subnet`
+(`count = length(var.zones)`, `map_public_ip_on_launch = true`), 1 private
+`aws_subnet` in `zones[0]`, `aws_eip`, `aws_nat_gateway` (in public subnet 0),
+2 `aws_route_table` (public, private), 2 `aws_route` (public 0.0.0.0/0 to the IGW;
+private 0.0.0.0/0 to the NAT gateway), 3 `aws_route_table_association`. Tag public
+subnets `kubernetes.io/role/elb = 1` and the private subnet
+`kubernetes.io/role/internal-elb = 1` (verified in the EKS network-reqs docs; the
+old `kubernetes.io/cluster/<name>` subnet tag is not needed since EKS 1.19).
+With `enable_nat_gateway = false`, the EIP, NAT gateway and private default route
+must not be created (use `count`), and the private subnet has no internet access.
+
+Variables: `project_name`, `vpc_cidr`, `zones` (list), `public_subnet_cidrs`
+(list, same order as `zones`), `private_subnet_cidr` (string),
+`enable_nat_gateway` (bool, default true; the "size down" switch), `tags`
+(map, default `{}`). Outputs: `vpc_id`, `public_subnet_ids`, `private_subnet_ids`
+(a list of one), named so the EKS block's `module.vpc.vpc_id` still works.
+
+EKS consequence (verified in the EKS network-reqs docs): cluster subnets must be in
+at least two AZs (public or private both allowed), and nodes may use subnets not
+given to the cluster. So the plan is `control_plane_subnet_ids` = the 2 public
+subnets and `subnet_ids` = the private subnet (nodes). Check the EKS module's
+input names when wiring. All nodes then run in one AZ, which is acceptable here.
+
+**Progress (2026-10-08):** coaching mode. Claude explains each resource and its key
+arguments, Roye writes the code, Claude reviews and runs `terraform validate` (on a
+scratch copy with `init -backend=false`, so no `.terraform/` lands in the module).
+`terraform fmt` is run once at the end, not per step.
+Order: variables, vpc, igw, public subnets, private subnet, eip, nat gateway, route
+tables and routes, associations, outputs, wiring into `terraform/aws/main.tf`.
+- Done and validating: `variables.tf`, `aws_vpc.this`, `aws_internet_gateway.igw`,
+  `aws_subnet.public_subnet` (count, ELB tag).
+- Next: step 5, `aws_subnet.private_subnet` (no count, `var.zones[0]`,
+  `internal-elb` tag). Open question for Roye: with nodes in the private subnet,
+  where does the ingress-nginx load balancer go and how does traffic reach pods?
+- Small open items: `tags` variable has no `default = {}` yet; description typos
+  in `variables.tf`; the comment above `module "eks"` in `terraform/aws/main.tf`
+  says "Commented out" but the block is active.
+- Module isn't wired into the root yet, so it has no effect on plan/apply.
 
 ## Terraform and AWS
 
