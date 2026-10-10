@@ -10,7 +10,7 @@ variable "vpc_cidr" {
 
 variable "zones" {
   type        = list(string)
-  description = "Names of avalibity zones to use"
+  description = "Names of availability zones to use"
 }
 
 variable "public_subnet_cidrs" {
@@ -25,11 +25,12 @@ variable "private_subnet_cidr" {
 
 variable "enable_nat_gateway" {
   type        = bool
-  description = "choose wether to enable a NAT or not"
+  description = "choose whether to enable a NAT or not"
   default     = true
 }
 
 variable "tags" {
   type        = map(string)
   description = "project tags"
+  default     = {}
 }

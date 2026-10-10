@@ -163,8 +163,8 @@ SCM polling.
 
 ## EKS facts (learned the hard way)
 
-- Cluster `tripsync-cluster`, region `eu-central-1`, Kubernetes **1.35** (standard
-  support until March 2027; versions past standard support bill $0.60/hr for the
+- Cluster `tripsync-cluster`, region `eu-central-1`, Kubernetes **1.37** (bumped from
+  1.35 on 2026-10-10; EKS GA October 2026, standard support until about December 2027; versions past standard support bill $0.60/hr for the
   control plane instead of $0.10, so check the EKS version calendar before bumping).
 - The AWS account is on the **Free Plan**: EC2 instance types are restricted.
   `t3.medium` is NOT allowed (the node group just sat in "creating" with no
@@ -209,8 +209,9 @@ must not be created (use `count`), and the private subnet has no internet access
 Variables: `project_name`, `vpc_cidr`, `zones` (list), `public_subnet_cidrs`
 (list, same order as `zones`), `private_subnet_cidr` (string),
 `enable_nat_gateway` (bool, default true; the "size down" switch), `tags`
-(map, default `{}`). Outputs: `vpc_id`, `public_subnet_ids`, `private_subnet_ids`
-(a list of one), named so the EKS block's `module.vpc.vpc_id` still works.
+(map, default `{}`). Outputs: `vpc_id`, `public_subnets`, `private_subnets`
+(a list of one), the same names as the community module, so the EKS block's
+`module.vpc.vpc_id` / `module.vpc.private_subnets` references still work.
 
 EKS consequence (verified in the EKS network-reqs docs): cluster subnets must be in
 at least two AZs (public or private both allowed), and nodes may use subnets not
@@ -225,14 +226,27 @@ scratch copy with `init -backend=false`, so no `.terraform/` lands in the module
 Order: variables, vpc, igw, public subnets, private subnet, eip, nat gateway, route
 tables and routes, associations, outputs, wiring into `terraform/aws/main.tf`.
 - Done and validating: `variables.tf`, `aws_vpc.this`, `aws_internet_gateway.igw`,
-  `aws_subnet.public_subnet` (count, ELB tag).
-- Next: step 5, `aws_subnet.private_subnet` (no count, `var.zones[0]`,
-  `internal-elb` tag). Open question for Roye: with nodes in the private subnet,
-  where does the ingress-nginx load balancer go and how does traffic reach pods?
-- Small open items: `tags` variable has no `default = {}` yet; description typos
-  in `variables.tf`; the comment above `module "eks"` in `terraform/aws/main.tf`
-  says "Commented out" but the block is active.
-- Module isn't wired into the root yet, so it has no effect on plan/apply.
+  `aws_subnet.public_subnet` (count, ELB tag), `aws_subnet.private_subnet`
+  (2026-10-10; traffic path discussed: LB in public subnets, VPC local route to
+  NodePorts on private nodes, NAT is outbound only).
+  `aws_eip.nat_eip` (count on `enable_nat_gateway`, `domain = "vpc"`, depends_on
+  IGW), `aws_nat_gateway.nat_gateway` (count, EIP `[0]`, in `public_subnet[0]`).
+  Cosmetic: their Name tags use underscores, others use hyphens.
+  Route tables, routes (separate `aws_route`, private one counted) and all 3
+  associations (written with Copilot's help, 2026-10-10). All 14 resources done.
+  `outputs.tf` done (community-module names, private as `[ ... .id]`).
+  Wired into `terraform/aws/main.tf` (local source, `control_plane_subnet_ids` =
+  public, `subnet_ids` = private), `terraform fmt` done, init + validate pass,
+  state was empty. **Week 4 item 1 done, pending a real apply test.**
+- Later: backend `dynamodb_table` is deprecated, switch to `use_lockfile`.
+- Week 4 item 2, step 1 done (2026-10-10): Jenkins access entry via the EKS
+  module's `access_entries` (Edit, namespace-scoped to `tripsync`), ARN read with
+  `data "aws_iam_user" "jenkins"`. The IAM user and its key stay outside Terraform
+  on purpose (keeps the secret out of state, survives destroy). Plan: 52 to add.
+- Next: step 2, `kubernetes` + `helm` providers pointed at the EKS cluster, then
+  step 3 `tripsync` namespace, step 4 ingress-nginx `helm_release`.
+- To verify on next apply: does ingress-nginx's `type: LoadBalancer` Service get
+  a Classic ELB or an NLB on EKS 1.37 (no AWS Load Balancer Controller installed)?
 
 ## Terraform and AWS
 
