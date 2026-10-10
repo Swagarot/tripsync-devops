@@ -51,16 +51,24 @@ everything else to the frontend. Without it the frontend's relative `/api` calls
 hit `try_files` and get `index.html`. **Not yet tested** (no Docker on the
 laptop); test it in Week 6 when a `postgres` service is added for local dev.
 
-Week 4 remaining (EKS is rebuilt for each test):
-1. Write my own minimal VPC module (spec below) to replace the community VPC module.
-2. Terraform the in-cluster pieces that are currently manual: the `tripsync`
-   namespace, ingress-nginx as a `helm_release`, and the Jenkins access entry via
-   the EKS module's `access_entries`.
-3. Make a fresh cluster pipeline-ready: `helm upgrade --install`, and push a
-   `:latest` tag next to the SHA tag (a fresh install has no tags to reuse, so the
-   frontend would otherwise pull a missing `latest` and `--atomic` would roll back).
-4. Clean-slate test: destroy, apply, run both pipelines with no manual steps.
+Week 4 done (2026-10-10), clean-slate test passed: `terraform apply` (54
+resources), then both pipelines with `TARGET=eks`, app served through the ELB,
+then `terraform destroy` (54 destroyed, no `DependencyViolation`, AWS verified
+empty). No manual steps.
+1. Own minimal VPC module (spec below) replaced the community VPC module.
+2. Terraform owns the `tripsync` namespace, ingress-nginx (`helm_release`, chart
+   4.15.1, in `terraform/aws/cluster.tf`) and the Jenkins access entry. The
+   `kubernetes`/`helm` providers connect via EKS module outputs +
+   `aws eks get-token` (`terraform/aws/providers.tf`).
+3. Jenkinsfiles use `helm upgrade --install` and push `:latest` next to the SHA
+   tag. `latest` is only the other service's fallback on the very first install
+   of a fresh cluster; every deploy still uses SHA tags. (A stale `latest` already
+   existed on Docker Hub; Roye questioned pushing it, kept for now. Alternative:
+   pass both SHA tags on first install.)
 Optional: move EKS images to ECR.
+**Flag:** the ingress-nginx project was retired in March 2026 (last chart 4.15.1,
+2026-03-19; no further security fixes). Fine for now, but consider Gateway API or
+another controller later, and be ready to explain the choice.
 
 Then: Week 5 observability (Prometheus, Grafana, Loki,
 Alertmanager); Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
@@ -172,26 +180,29 @@ SCM polling.
   `aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`.
 - Jenkins deploys with a **separate IAM user** (`jenkins-eks`, `eks:DescribeCluster`
   only) plus an EKS **access entry** (namespace-scoped `AmazonEKSEditPolicy` on
-  `tripsync`). The access entry is created outside Terraform today and is lost on
-  destroy; it must be recreated or moved into Terraform.
-- A fresh EKS cluster has no ingress-nginx and no `tripsync` namespace. Today both
-  are created by hand, and the first install is manual
-  (`helm upgrade --install` with both tags), because `helm upgrade` needs an
-  existing release.
+  `tripsync`). The user and its key are made by hand and stay outside Terraform
+  (keeps the secret out of state, survives destroy); the access entry is in
+  Terraform (`access_entries`, ARN via `data "aws_iam_user"`).
+- A fresh cluster gets the `tripsync` namespace and ingress-nginx from
+  `terraform apply`; the first pipeline run installs the app release.
+- ingress-nginx's `type: LoadBalancer` Service gets a **Classic ELB**
+  (internet-facing, in the 2 public subnets) on EKS 1.37, since the AWS Load
+  Balancer Controller isn't installed. Nodes sit in the private subnet, no public IP.
 - EKS pulls the public Docker Hub images (no ECR yet) through the NAT gateway.
-- **Teardown order:** `helm uninstall` the app, `helm uninstall ingress-nginx`
-  (this deletes the AWS load balancer Kubernetes created, which Terraform doesn't
-  know about), wait until `aws elb describe-load-balancers` and
-  `aws elbv2 describe-load-balancers` are empty, then `terraform destroy`. A
-  leftover load balancer makes the VPC delete fail with `DependencyViolation`.
-  Anything created by controllers inside the cluster (load balancers, EBS volumes
-  from PVCs) must be removed from inside the cluster first.
+- **Teardown:** `terraform destroy` alone works now: it uninstalls ingress-nginx
+  first (which deletes the ELB), then the cluster and VPC. Verified 2026-10-10.
+  Afterwards check `aws elb` / `aws elbv2 describe-load-balancers`, NAT gateways
+  and EIPs are empty. The app release creates no AWS resources (ClusterIP
+  Services, Ingresses only), so uninstalling it first is optional. **This changes
+  in Week 6:** a Postgres PVC creates an EBS volume (needs the EBS CSI add-on);
+  delete it from inside the cluster before destroy or it keeps billing.
 - Cost: the control plane, NAT gateway, node and load balancer all bill hourly.
   Never leave EKS running unattended.
 
-## Planned minimal VPC module (`terraform/aws/modules/vpc`)
+## Minimal VPC module (`terraform/aws/modules/vpc`)
 
-Being written by Roye step by step (coached, not generated). Design decision:
+Written by Roye step by step (coached; route tables/associations with Copilot's
+help), applied and proven 2026-10-10. Design decision:
 **2 public subnets + 1 private subnet** (cheaper and simpler than 2 private).
 
 Resources (about 14): `aws_vpc` (enable BOTH `enable_dns_support` and
@@ -216,67 +227,15 @@ Variables: `project_name`, `vpc_cidr`, `zones` (list), `public_subnet_cidrs`
 EKS consequence (verified in the EKS network-reqs docs): cluster subnets must be in
 at least two AZs (public or private both allowed), and nodes may use subnets not
 given to the cluster. So the plan is `control_plane_subnet_ids` = the 2 public
-subnets and `subnet_ids` = the private subnet (nodes). Check the EKS module's
-input names when wiring. All nodes then run in one AZ, which is acceptable here.
+subnets and `subnet_ids` = the private subnet (nodes). All nodes then run in one AZ, which is acceptable here.
 
-**Progress (2026-10-08):** coaching mode. Claude explains each resource and its key
-arguments, Roye writes the code, Claude reviews and runs `terraform validate` (on a
-scratch copy with `init -backend=false`, so no `.terraform/` lands in the module).
-`terraform fmt` is run once at the end, not per step.
-Order: variables, vpc, igw, public subnets, private subnet, eip, nat gateway, route
-tables and routes, associations, outputs, wiring into `terraform/aws/main.tf`.
-- Done and validating: `variables.tf`, `aws_vpc.this`, `aws_internet_gateway.igw`,
-  `aws_subnet.public_subnet` (count, ELB tag), `aws_subnet.private_subnet`
-  (2026-10-10; traffic path discussed: LB in public subnets, VPC local route to
-  NodePorts on private nodes, NAT is outbound only).
-  `aws_eip.nat_eip` (count on `enable_nat_gateway`, `domain = "vpc"`, depends_on
-  IGW), `aws_nat_gateway.nat_gateway` (count, EIP `[0]`, in `public_subnet[0]`).
-  Cosmetic: their Name tags use underscores, others use hyphens.
-  Route tables, routes (separate `aws_route`, private one counted) and all 3
-  associations (written with Copilot's help, 2026-10-10). All 14 resources done.
-  `outputs.tf` done (community-module names, private as `[ ... .id]`).
-  Wired into `terraform/aws/main.tf` (local source, `control_plane_subnet_ids` =
-  public, `subnet_ids` = private), `terraform fmt` done, init + validate pass,
-  state was empty. **Week 4 item 1 done, pending a real apply test.**
-- Later: backend `dynamodb_table` is deprecated, switch to `use_lockfile`.
-- Week 4 item 2, step 1 done (2026-10-10): Jenkins access entry via the EKS
-  module's `access_entries` (Edit, namespace-scoped to `tripsync`), ARN read with
-  `data "aws_iam_user" "jenkins"`. The IAM user and its key stay outside Terraform
-  on purpose (keeps the secret out of state, survives destroy). Plan: 52 to add.
-- Next: step 2, `kubernetes` + `helm` providers pointed at the EKS cluster, then
-  step 3 `tripsync` namespace, step 4 ingress-nginx `helm_release`.
-- To verify on next apply: does ingress-nginx's `type: LoadBalancer` Service get
-  a Classic ELB or an NLB on EKS 1.37 (no AWS Load Balancer Controller installed)?
+Things Roye should be able to explain: traffic path (ELB in public subnets, VPC
+`local` route to NodePorts on private nodes, NAT is outbound only); why the NAT
+needs an EIP and sits in a public subnet; `count` as the NAT switch; separate
+`aws_route` vs inline routes; splat `[*]`; required vs defaulted variables;
+outputs as a module's return values; no SGs in the VPC module (EKS module and
+the cloud provider create them).
 
-## Terraform and AWS
-
-- Remote state: S3 bucket `tripsync-tfstate-roye`, DynamoDB lock table
-  `tripsync-tfstate-lock`, region `eu-central-1`; state keys `k3s/terraform.tfstate`
-  and `aws/terraform.tfstate`. Environments are separate root configurations
-  (different providers), not workspaces.
-- `.gitignore` must keep ignoring `.terraform/`, `*.tfstate*`, `*.tfvars`,
-  `.terraform.lock.hcl` (a 685 MB provider binary once blocked a push).
-- **Do not `terraform apply` in `terraform/aws` without asking Roye first.** The
-  VPC module includes a NAT gateway and EKS bills ~$0.10/hr for its control plane,
-  all hourly regardless of load. Plan: apply, test, then destroy in one sitting.
-  Before `terraform destroy`, uninstall the ingress-nginx release so the AWS load
-  balancer doesn't block VPC deletion.
-- When EKS is enabled it needs `enable_cluster_creator_admin_permissions = true`
-  (verify in the module docs) or `kubectl` is denied.
-- Nothing secret belongs in this repo: AWS keys, kubeconfigs and tokens live in
-  local config or the Jenkins credential store.
-
-## Working style
-
-- Roye knows Docker, basic Kubernetes, Terraform and Linux. Jenkins and Helm are
-  newer to him: explain pipeline syntax, agents, credentials binding and
-  templating when they come up.
-- If uncertain, say so ("לא בטוח") instead of asserting. Flag unverified
-  hypotheses and check them before presenting them as likely. Past mistakes in
-  this project came from confident but unchecked answers.
-- On Windows PowerShell, scripts are blocked by default:
-  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` per window.
-- **At the end of the project, quiz Roye** on everything fixed or built and why
-  (Ingress annotation scoping, Helm release vs resource namespace, CORS, `0.0.0.0`
-  binding, nginx `try_files`, Helm value recomputation, state locking, liveness vs
-  readiness), so he can explain any of it cold.
+Open items:
+- Backend `dynamodb_table` is deprecated, switch to `use_lockfile`.
+- Cosmetic: NAT EIP/gateway Name tags use underscores, others use hyphens.
