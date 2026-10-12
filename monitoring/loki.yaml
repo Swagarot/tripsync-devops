@@ -1,0 +1,65 @@
+# Loki settings for the homelab k3s cluster (log storage, queried from Grafana).
+# Installed by terraform/k3s/logging.tf (chart version pinned there).
+
+# One process doing everything (ingest, store, query). The chart's default
+# (SimpleScalable) splits it into read/write/backend pods and needs object
+# storage like S3; far too much for one small app.
+deploymentMode: SingleBinary
+
+loki:
+  # Single tenant. With auth on, every request needs an X-Scope-OrgID header.
+  auth_enabled: false
+  commonConfig:
+    # Only one copy of each log stream; durability comes from the Longhorn
+    # volume (2 replicas), not from Loki.
+    replication_factor: 1
+  # Chunks and index live on the local (Longhorn) volume, not S3.
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2026-10-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  # 7 days, same as Prometheus. The compactor is what actually deletes old data.
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: longhorn
+    size: 5Gi
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+# The scalable-mode components are unused in SingleBinary mode.
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+
+# Optional extras, off to save RAM: memcached caches (each defaults to GBs of
+# memory), the nginx gateway in front of Loki (Grafana talks to Loki directly),
+# the canary that writes test logs, and the chart's self-test.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+gateway:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false

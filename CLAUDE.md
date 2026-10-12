@@ -134,8 +134,18 @@ alert rules. Retention about 7 days.
   the k3s Grafana. Cost reasoning: k3s Prometheus ingests ~4,350 samples/s (mostly
   cluster metrics), which would be ~$1,000/month at $0.90 per 10M samples if sent
   24/7; app-only while EKS is up fits the free tier. Do it in a future EKS session.
-- Next: Loki + Alloy (logs), then alert rules + a receiver, then a TripSync
-  dashboard as code.
+- Logs (2026-10-12, built by Claude at Roye's request, explanation pending):
+  `terraform/k3s/logging.tf`. Loki chart 7.3.0 (Loki 3.6) in SingleBinary mode,
+  filesystem storage on a 5Gi Longhorn volume, 7d retention (compactor), caches/
+  gateway/canary off (`monitoring/loki.yaml`). Alloy chart 1.13.1 as a DaemonSet
+  incl. the control node, tails /var/log/pods for its own node (HOSTNAME = node
+  name), labels namespace/pod/container/app/node, strips the CRI wrapper, pushes
+  to `loki:3100` (`monitoring/alloy.yaml`). Promtail is deprecated (chart marked
+  deprecated, last release 2025-10). Grafana gets a Loki datasource via
+  `grafana.additionalDataSources`. On first start each Alloy pod had one batch
+  rejected as "too old" (old lines in existing files, older than 7d): expected,
+  one-time. Monitoring namespace now ~1.8 GiB.
+- Next: alert rules + a receiver, then a TripSync dashboard as code.
 
 Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,

@@ -85,6 +85,14 @@ grafana:
   # /grafana/metrics, so Prometheus must scrape that path directly.
   serviceMonitor:
     path: /grafana/metrics
+  # Prometheus and Alertmanager datasources come from the chart; Loki is added
+  # here (installed by terraform/k3s/logging.tf). Config-as-code, like the rest.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
 
 prometheusOperator:
   resources:
