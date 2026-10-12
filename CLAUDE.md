@@ -70,8 +70,50 @@ Optional: move EKS images to ECR.
 2026-03-19; no further security fixes). Fine for now, but consider Gateway API or
 another controller later, and be ready to explain the choice.
 
-Then: Week 5 observability (Prometheus, Grafana, Loki,
-Alertmanager); Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
+Week 5 (started 2026-10-12): observability on **k3s only** (EKS is ephemeral and
+its 4 GiB node is too small). Plan: Longhorn first, then kube-prometheus-stack
+(Prometheus, Alertmanager, Grafana) via `helm_release` in `terraform/k3s`,
+Grafana dashboards/datasources as code (no Grafana PVC), backend `/metrics` +
+`ServiceMonitor`, Loki + Grafana Alloy for logs (Promtail is EOL, verify), a few
+alert rules. Retention about 7 days.
+- **Scope addition (deliberate, 2026-10-12): Longhorn** replicated block storage
+  (`terraform/k3s/longhorn.tf`, chart 1.12.1, `longhorn-system`), 2 replicas (only
+  2 schedulable workers; the control node has the `NoSchedule` taint), NOT the
+  default class (`local-path` stays default; workloads opt in with
+  `storageClassName: longhorn`). Each worker has a dedicated 100 GB disk mounted
+  at `/var/lib/longhorn` (`LABEL=longhorn`, `nofail`) and `open-iscsi`. Why: survive
+  losing a worker for Prometheus, Loki and later Postgres.
+- Storage reasoning to defend: Prometheus docs say NFS is unsupported (corruption
+  risk); a shared (RWX) volume is NFS underneath and Prometheus allows only one
+  writer anyway (lock file). Replicated RWO block storage is the right fit. The
+  NFS server is a good target for backups (Week 6 Postgres dumps).
+- `terraform/k3s` providers now pin `config_context = "default"`: the laptop's
+  current kubectl context was a stale EKS entry.
+- Workers raised from ~3.3 to 6 GiB RAM (~5.3 GiB allocatable). Done 2026-10-12.
+- Longhorn applied 2026-10-12: both 98 GiB disks Ready, ~263 MiB RAM idle. Node
+  prep done by hand on both workers: `multipathd` (service + socket) disabled
+  (it grabs Longhorn's /dev/sdX devices, mounts then fail "already mounted";
+  longhorn.io/kb/troubleshooting-volume-with-multipath), `dm_crypt` loaded (only
+  for encrypted volumes). Longhorn's node conditions still showed both as stale
+  (it hadn't re-checked); skipped a manager restart. A test PVC mounted fine.
+  Drain-a-worker failover test still to do.
+- kube-prometheus-stack applied 2026-10-12 (`terraform/k3s/monitoring.tf`, chart
+  92.3.0, namespace `monitoring`, settings in `monitoring/kube-prometheus-stack.yaml`).
+  Prometheus 8Gi + Alertmanager 1Gi on Longhorn (both healthy); 7d / 6GB
+  retention; selectors pick up ServiceMonitors from any release; k3s's
+  controller-manager/scheduler/proxy/etcd scraping disabled (localhost-only in
+  k3s). All 21 targets up, only `Watchdog` firing. Stack uses ~965 MiB.
+- Grafana: no PVC, served at `/grafana` via ingress-nginx (host-less, like the
+  app). Because of the sub-path its own metrics are at `/grafana/metrics`
+  (`grafana.serviceMonitor.path`). Admin password is chart-generated in Secret
+  `kube-prometheus-stack-grafana`, never in git. Reach the app and Grafana from
+  the laptop via the control node's Tailscale IP (the 10.10.60.x LAN IPs are not
+  reachable from it). Grafana restarted twice on first install: liveness probe
+  failed while it was still starting (slow first start); stable since.
+- Next: backend `/metrics` + `ServiceMonitor` in the tripsync chart, then Loki +
+  Alloy, then alert rules + a receiver.
+
+Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,
 Jest stage); Week 8 export, sync, polish, final review.
 

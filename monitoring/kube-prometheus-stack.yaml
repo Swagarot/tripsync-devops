@@ -1,0 +1,100 @@
+# kube-prometheus-stack settings for the homelab k3s cluster.
+# Installed by terraform/k3s/monitoring.tf (chart version pinned there).
+# Budget: the two workers have ~5.3 GiB each; this stack is capped at ~2.5 GiB.
+
+# k3s runs the controller manager, scheduler and proxy inside the k3s binary,
+# listening on 127.0.0.1 only, and this cluster has no separate etcd. Prometheus
+# can't reach them, so scraping them would only produce "target down" alerts.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # Safety net: drop the oldest data before the 8Gi volume fills up.
+    retentionSize: 6GB
+    # By default Prometheus only picks up ServiceMonitors/PodMonitors/rules
+    # labeled with this Helm release. false = pick up all of them, so the
+    # tripsync chart's ServiceMonitor works without release-specific labels.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { memory: 1536Mi }
+    # Replicated Longhorn volume: survives losing a worker. Not NFS (the
+    # Prometheus docs say NFS is unsupported and can corrupt the database).
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 8Gi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    # Only silences and notification state live here; small volume.
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+
+grafana:
+  # No volume on purpose: datasources and dashboards are config-as-code
+  # (sidecar loads them from ConfigMaps), so a restart loses nothing.
+  persistence:
+    enabled: false
+  # adminPassword is left unset: the chart generates a random one into the
+  # Secret kube-prometheus-stack-grafana and reuses it on upgrades. Nothing
+  # secret goes in git. Read it with:
+  #   kubectl -n monitoring get secret kube-prometheus-stack-grafana \
+  #     -o jsonpath='{.data.admin-password}' | base64 -d
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  # Served under /grafana on the same ingress-nginx as the app (no hostname,
+  # like the tripsync Ingresses). Grafana must know its sub-path to build links.
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana/"
+      serve_from_sub_path: true
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: []
+    path: /grafana
+    pathType: Prefix
+  # The sub-path applies to Grafana's own metrics too: /metrics redirects to
+  # /grafana/metrics, so Prometheus must scrape that path directly.
+  serviceMonitor:
+    path: /grafana/metrics
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }
