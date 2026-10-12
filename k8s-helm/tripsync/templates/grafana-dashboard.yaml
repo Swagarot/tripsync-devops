@@ -1,0 +1,25 @@
+{{- /*
+The TripSync Grafana dashboard, as code. The JSON lives in
+dashboards/tripsync.json (outside templates/, so Helm doesn't try to render
+it) and is read in with .Files.Get.
+
+How it reaches Grafana: Grafana's dashboard sidecar (from
+kube-prometheus-stack) watches ConfigMaps in all namespaces that have the
+label grafana_dashboard: "1", writes their content to a folder, and Grafana
+loads every dashboard in that folder. So deploying the chart = updating the
+dashboard. UI edits aren't saved back; change the JSON instead.
+
+Gated like the ServiceMonitor: on EKS there's no Grafana, so skip it.
+*/ -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tripsync-grafana-dashboard
+  namespace: {{ .Values.namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  tripsync.json: |-
+{{ .Files.Get "dashboards/tripsync.json" | indent 4 }}
+{{- end }}

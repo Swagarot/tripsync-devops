@@ -1,0 +1,96 @@
+{{- /*
+Alert rules for TripSync. A PrometheusRule is a custom resource of the
+Prometheus Operator: the operator loads every PrometheusRule into Prometheus,
+Prometheus evaluates the expressions every 30s, and firing alerts go to
+Alertmanager, which decides who gets notified.
+
+Like the ServiceMonitor, this only renders where the Prometheus Operator
+exists (k3s). EKS has no monitoring stack, so it's skipped there.
+
+Generic Kubernetes failures are already covered by kube-prometheus-stack's
+built-in rules (KubePodCrashLooping, KubePodNotReady, TargetDown,
+KubePersistentVolumeFillingUp, ...). These rules cover what only the app can
+tell us.
+
+Anatomy of a rule:
+  expr:        PromQL; the alert is "pending" while it returns any series.
+  for:         how long it must stay true before it fires (filters blips,
+               e.g. a pod restarting during a normal deploy).
+  labels:      severity is used by Alertmanager for routing and inhibition
+               (a critical alert silences the matching warning).
+  annotations: human text for the notification; {{ "{{ $value }}" }} is the
+               value of expr. The extra quoting is because Helm uses the same
+               {{ }} syntax, so Prometheus's templates must be escaped.
+*/ -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tripsync-alerts
+  namespace: {{ .Values.namespace }}
+spec:
+  groups:
+    - name: tripsync.availability
+      rules:
+        # Prometheus can't scrape the backend (pod hung, crashed, or the
+        # /metrics endpoint broke). up is 1 per successful scrape, 0 if not.
+        # absent(...) catches the case where the target disappeared entirely
+        # (e.g. the deployment was scaled to 0), where up has no series at all.
+        - alert: TripsyncBackendDown
+          expr: |
+            up{namespace="{{ .Values.namespace }}", job="tripsync-backend"} == 0
+              or absent(up{namespace="{{ .Values.namespace }}", job="tripsync-backend"})
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: TripSync backend is down
+            description: Prometheus has not been able to scrape the backend for 2 minutes. The API is probably unavailable.
+
+        # The frontend has no /metrics, so use kube-state-metrics instead: how
+        # many pods of the Deployment are Ready.
+        - alert: TripsyncFrontendDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="{{ .Values.namespace }}", deployment="tripsync-frontend"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: TripSync frontend has no ready pods
+            description: The frontend Deployment has had 0 available replicas for 2 minutes. The site is not loading.
+
+    - name: tripsync.quality
+      rules:
+        # Share of backend responses that are server errors (5xx) over the
+        # last 5 minutes. Health-check traffic keeps the denominator above
+        # zero, so this never divides by zero while the backend is up. Until
+        # the first 5xx ever happens, the top half has no series at all, so
+        # the result is empty = no alert (which is the right answer).
+        - alert: TripsyncHighErrorRate
+          expr: |
+            sum(rate(flask_http_request_total{namespace="{{ .Values.namespace }}", status=~"5.."}[5m]))
+              /
+            sum(rate(flask_http_request_total{namespace="{{ .Values.namespace }}"}[5m]))
+              > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: TripSync backend error rate above 5%
+            description: {{ "'{{ $value | humanizePercentage }} of backend requests returned 5xx over the last 5 minutes.'" }}
+
+        # 95th percentile response time of real API calls (health checks and
+        # /metrics excluded: they are fast and constant and would hide slow
+        # endpoints). With no real traffic the result is empty, so no alert.
+        - alert: TripsyncSlowResponses
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(flask_http_request_duration_seconds_bucket{namespace="{{ .Values.namespace }}", path!~"/health.*|/metrics"}[5m]))
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: TripSync API is slow
+            description: {{ "'95% of API requests took up to {{ $value | humanizeDuration }} over the last 10 minutes (threshold 1s).'" }}
+{{- end }}

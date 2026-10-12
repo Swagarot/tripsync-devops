@@ -1,0 +1,151 @@
+{
+  "uid": "tripsync-overview",
+  "title": "TripSync / Overview",
+  "description": "TripSync app health: availability, traffic, errors, latency, resources and logs. Provisioned from the tripsync Helm chart (dashboards/tripsync.json); edits made in the UI are lost on the next deploy.",
+  "tags": ["tripsync"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Backend up",
+      "description": "1 = Prometheus scraped the backend's /metrics successfully on the last attempt, 0 = it failed. Same signal as the TripsyncBackendDown alert.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(up{namespace=\"tripsync\", job=\"tripsync-backend\"})" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Ready pods",
+      "description": "Ready replicas per Deployment, from kube-state-metrics. 0 for the frontend fires TripsyncFrontendDown.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "kube_deployment_status_replicas_available{namespace=\"tripsync\"}", "legendFormat": "{{deployment}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "5xx error rate (5m)",
+      "description": "Share of backend responses with status 5xx over the last 5 minutes. TripsyncHighErrorRate fires above 5% for 5 minutes. Empty/0 = no server errors.",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(flask_http_request_total{namespace=\"tripsync\", status=~\"5..\"}[5m])) or vector(0)) / sum(rate(flask_http_request_total{namespace=\"tripsync\"}[5m]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "p95 API latency (5m)",
+      "description": "95% of real API requests (health checks and /metrics excluded) finished within this time. TripsyncSlowResponses fires above 1s for 10 minutes. 'No data' = no real API traffic in the window.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(flask_http_request_duration_seconds_bucket{namespace=\"tripsync\", path!~\"/health.*|/metrics\"}[5m])))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Requests per second by path and status",
+      "description": "Backend traffic. /health/live and /health/ready are Kubernetes probes, the rest is real API use. Note the Ingress strips the /api prefix, so /api/x shows as /x.",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (path, status) (rate(flask_http_request_duration_seconds_count{namespace=\"tripsync\"}[5m]))", "legendFormat": "{{path}} {{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "API latency (p50 / p95)",
+      "description": "Median and 95th percentile response time of real API requests, from the request duration histogram. Health checks excluded.",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(flask_http_request_duration_seconds_bucket{namespace=\"tripsync\", path!~\"/health.*|/metrics\"}[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(flask_http_request_duration_seconds_bucket{namespace=\"tripsync\", path!~\"/health.*|/metrics\"}[5m])))", "legendFormat": "p95" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Memory per pod (working set)",
+      "description": "Memory the container actually uses (what the limit and the OOM killer look at). Compare against the limits in values.yaml: backend 256Mi, frontend 128Mi.",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"tripsync\", container!=\"\"})", "legendFormat": "{{pod}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "CPU per pod",
+      "description": "CPU cores used per pod (0.1 = 100m). Compare against the limits in values.yaml: backend 250m, frontend 100m. Hitting the limit means throttling (slower responses), not a restart.",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"tripsync\", container!=\"\"}[5m]))", "legendFormat": "{{pod}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Logs (tripsync namespace)",
+      "description": "Live container logs from Loki, collected by Alloy. Backend lines are Gunicorn access logs (client, request, status). Use Explore with LogQL for filtering, e.g. {app=\"tripsync-backend\"} |= \" 500 \".",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{namespace=\"tripsync\"}" }
+      ],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}
