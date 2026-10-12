@@ -162,8 +162,17 @@ alert rules. Retention about 7 days.
   kubectl; must exist before Alertmanager starts), read via `webhook_url_file`
   from /etc/alertmanager/secrets/alertmanager-discord/. Config checked with
   `amtool check-config`; a hand-posted test alert routed to discord.
-- Week 5 core done pending Roye's confirmation the Discord message arrived.
-  Left: drain-a-worker Longhorn failover test; stretch: managed Prometheus for EKS.
+- **Session end 2026-10-12: Week 5 core done** (metrics, logs, alerts, dashboard).
+  Open at the start of next session:
+  1. Ask Roye whether the TripsyncTestAlert message arrived in Discord (not yet
+     confirmed; Alertmanager routed it to `discord` with no delivery errors).
+  2. Explain what Claude built (Roye asked for this): Loki/Alloy, the alert rules,
+     Alertmanager routing, the dashboard. The files are commented for this.
+  3. Longhorn failover test: drain the worker running Prometheus, confirm it
+     comes back on the other worker with its data.
+  4. Optional end-to-end alert test: scale the backend to 0 for ~3 min,
+     expect TripsyncBackendDown in Discord, then a resolved message.
+  Stretch: managed Prometheus for EKS (above). Then Week 6.
 
 Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,
