@@ -145,7 +145,25 @@ alert rules. Retention about 7 days.
   `grafana.additionalDataSources`. On first start each Alloy pod had one batch
   rejected as "too old" (old lines in existing files, older than 7d): expected,
   one-time. Monitoring namespace now ~1.8 GiB.
-- Next: alert rules + a receiver, then a TripSync dashboard as code.
+- Alerts + dashboard (2026-10-12, built by Claude, commented for later reading):
+  `k8s-helm/tripsync/templates/prometheus-rules.yaml` (PrometheusRule, gated on the
+  CRD like the ServiceMonitor): TripsyncBackendDown (up==0 or absent, 2m,
+  critical), TripsyncFrontendDown (kube-state-metrics available==0, 2m, critical),
+  TripsyncHighErrorRate (5xx >5% for 5m, warning), TripsyncSlowResponses (p95 of
+  non-health paths >1s for 10m, warning). Generic failures (crash loops, not
+  ready, target down, volumes filling) are left to the chart's ~134 built-in rules.
+  Prometheus `{{ $value }}` is escaped for Helm. Dashboard: `dashboards/tripsync.json`
+  + `templates/grafana-dashboard.yaml` (ConfigMap labeled grafana_dashboard=1, loaded
+  by the Grafana sidecar from any namespace; UI edits are not saved back).
+- Alertmanager -> **Discord** (`alertmanager.config` in kube-prometheus-stack.yaml):
+  everything except Watchdog/InfoInhibitor goes to Discord, grouped by namespace +
+  alertname, send_resolved. The webhook URL lives only in the Secret
+  `alertmanager-discord` (key `webhook-url`, monitoring ns, created by hand with
+  kubectl; must exist before Alertmanager starts), read via `webhook_url_file`
+  from /etc/alertmanager/secrets/alertmanager-discord/. Config checked with
+  `amtool check-config`; a hand-posted test alert routed to discord.
+- Week 5 core done pending Roye's confirmation the Discord message arrived.
+  Left: drain-a-worker Longhorn failover test; stretch: managed Prometheus for EKS.
 
 Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,

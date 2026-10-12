@@ -40,7 +40,64 @@ prometheus:
               storage: 8Gi
 
 alertmanager:
+  # Who gets notified. Prometheus only decides that an alert is firing;
+  # Alertmanager groups alerts, removes duplicates, silences lesser alerts when
+  # a bigger one fires (inhibit_rules), and sends notifications.
+  # Setting `config` replaces the chart's default config entirely, so the
+  # chart's defaults that are still wanted (inhibit rules, null receiver for
+  # Watchdog) are repeated here.
+  config:
+    global:
+      # An alert that stops arriving is considered resolved after 5 minutes.
+      resolve_timeout: 5m
+    route:
+      # Alerts with the same namespace and alertname are batched into one
+      # Discord message instead of one message each.
+      group_by: [namespace, alertname]
+      group_wait: 30s       # wait this long for more alerts of a new group
+      group_interval: 5m    # then send updates to a group at most this often
+      repeat_interval: 12h  # re-send a still-firing alert every 12h
+      receiver: discord     # default: everything goes to Discord...
+      routes:
+        # ...except Watchdog, which fires all the time on purpose (it proves
+        # the alerting pipeline works) and would spam the channel...
+        - matchers: ['alertname = "Watchdog"']
+          receiver: "null"
+        # ...and InfoInhibitor, a helper alert that only exists to silence
+        # info-level alerts; it's not meant for humans.
+        - matchers: ['alertname = "InfoInhibitor"']
+          receiver: "null"
+    receivers:
+      # A receiver with no configs: alerts routed here are dropped.
+      - name: "null"
+      - name: discord
+        discord_configs:
+          # The webhook URL is a secret (anyone with it can post to the
+          # channel), so it's read from a file: the Secret
+          # alertmanager-discord, created by hand with kubectl and mounted by
+          # alertmanagerSpec.secrets below. Nothing secret is in git.
+          - webhook_url_file: /etc/alertmanager/secrets/alertmanager-discord/webhook-url
+            # Also post when the problem is fixed.
+            send_resolved: true
+    inhibit_rules:
+      # If a critical alert fires, mute the warning/info version of the same
+      # alert in the same namespace (the chart's default behavior).
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: [namespace, alertname]
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: [namespace, alertname]
+      - source_matchers: ['alertname = InfoInhibitor']
+        target_matchers: ['severity = info']
+        equal: [namespace]
+    templates:
+      - /etc/alertmanager/config/*.tmpl
   alertmanagerSpec:
+    # Mounted at /etc/alertmanager/secrets/<secret name>/<key>. The Secret must
+    # exist before Alertmanager starts, or the pod can't mount it.
+    secrets:
+      - alertmanager-discord
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { memory: 128Mi }
