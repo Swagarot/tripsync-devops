@@ -3,10 +3,13 @@ kind: Service
 metadata:
   name: tripsync-backend
   namespace: {{ .Values.namespace }}
+  labels:
+    app: tripsync-backend
 spec:
   selector:
     app: tripsync-backend
   ports:
     - port: {{ .Values.backend.port }}
       targetPort: {{ .Values.backend.port }}
+      name: http
   type: ClusterIP

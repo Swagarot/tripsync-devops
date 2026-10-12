@@ -113,8 +113,25 @@ alert rules. Retention about 7 days.
   it sat at ~372Mi, `/api/health` timed out, pod stayed not-ready, ingress gave
   503 and no dashboards showed. Limit raised to 768Mi (request 256Mi); it uses
   ~320Mi, 25 dashboards load. Stack total now ~1.1 GiB.
-- Next: backend `/metrics` + `ServiceMonitor` in the tripsync chart, then Loki +
-  Alloy, then alert rules + a receiver.
+- Backend (2026-10-12, `9f4856a`): runs Gunicorn (1 worker, 4 threads: the
+  prometheus-flask-exporter counters are per-process, so scale with pods, not
+  workers) instead of the Flask debug server; `/metrics` via
+  `PrometheusMetrics(app)` (cluster-internal only, not on the Ingress);
+  requirements.txt trimmed from a ~50-package laptop freeze (UTF-16) to 4 pinned
+  packages. Later (Week 6): container runs as root, switch to a non-root user.
+- Chart: `backend-servicemonitor.yaml` wrapped in
+  `.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor"` so
+  EKS (no Prometheus Operator) still installs. Backend Service needs
+  `metadata.labels.app: tripsync-backend` and port name `http` (in progress).
+- EKS has no monitoring (by design). **Stretch item (decided 2026-10-12):**
+  Amazon Managed Service for Prometheus for EKS, app metrics only:
+  `aws_prometheus_workspace` + `aws_prometheus_scraper` (scrape config filtered
+  to backend pods, needs an access entry), a read-only IAM user
+  (`aps:QueryMetrics`) whose keys go in a k3s Secret, and a SigV4 datasource in
+  the k3s Grafana. Cost reasoning: k3s Prometheus ingests ~4,350 samples/s (mostly
+  cluster metrics), which would be ~$1,000/month at $0.90 per 10M samples if sent
+  24/7; app-only while EKS is up fits the free tier. Do it in a future EKS session.
+- Next: finish ServiceMonitor, then Loki + Alloy, then alert rules + a receiver.
 
 Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,

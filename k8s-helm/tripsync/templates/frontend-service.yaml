@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: tripsync-frontend
   namespace: {{ .Values.namespace }}
+  labels:
+    app: tripsync-frontend
 spec:
   selector:
     app: tripsync-frontend
