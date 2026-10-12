@@ -122,7 +122,10 @@ alert rules. Retention about 7 days.
 - Chart: `backend-servicemonitor.yaml` wrapped in
   `.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor"` so
   EKS (no Prometheus Operator) still installs. Backend Service needs
-  `metadata.labels.app: tripsync-backend` and port name `http` (in progress).
+  `metadata.labels.app: tripsync-backend` and port name `http` (both Services
+  now labeled). Verified 2026-10-12: backend target up, 22/22 targets up.
+  Chart-only changes deploy on the next app pipeline run (the devops repo
+  isn't polled). The Ingress strips `/api`, so paths in metrics have no prefix.
 - EKS has no monitoring (by design). **Stretch item (decided 2026-10-12):**
   Amazon Managed Service for Prometheus for EKS, app metrics only:
   `aws_prometheus_workspace` + `aws_prometheus_scraper` (scrape config filtered
@@ -131,7 +134,8 @@ alert rules. Retention about 7 days.
   the k3s Grafana. Cost reasoning: k3s Prometheus ingests ~4,350 samples/s (mostly
   cluster metrics), which would be ~$1,000/month at $0.90 per 10M samples if sent
   24/7; app-only while EKS is up fits the free tier. Do it in a future EKS session.
-- Next: finish ServiceMonitor, then Loki + Alloy, then alert rules + a receiver.
+- Next: Loki + Alloy (logs), then alert rules + a receiver, then a TripSync
+  dashboard as code.
 
 Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
 Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,
