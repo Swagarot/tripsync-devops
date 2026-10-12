@@ -109,7 +109,10 @@ alert rules. Retention about 7 days.
   `kube-prometheus-stack-grafana`, never in git. Reach the app and Grafana from
   the laptop via the control node's Tailscale IP (the 10.10.60.x LAN IPs are not
   reachable from it). Grafana restarted twice on first install: liveness probe
-  failed while it was still starting (slow first start); stable since.
+  failed while it was still starting. Then its 384Mi memory limit was too low:
+  it sat at ~372Mi, `/api/health` timed out, pod stayed not-ready, ingress gave
+  503 and no dashboards showed. Limit raised to 768Mi (request 256Mi); it uses
+  ~320Mi, 25 dashboards load. Stack total now ~1.1 GiB.
 - Next: backend `/metrics` + `ServiceMonitor` in the tripsync chart, then Loki +
   Alloy, then alert rules + a receiver.
 
