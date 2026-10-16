@@ -291,6 +291,36 @@ Week 7 (2026-10-16, built by Claude, **explanation pending**), frontend `dd96e9b
   Cloudflare's default Browser Cache TTL (4h) overrides nginx `no-cache` on
   `sw.js`: set Caching -> Browser Cache TTL to "Respect Existing Headers".
 
+Wanderlog-style features (2026-10-16, built by Claude, **explanation pending**;
+Roye picked: free place search with photos, map-first view, drag and drop,
+travel times):
+- Backend `tripsync/places.py`: `GET /places/search?q&lat&lng` -> Photon (lang en,
+  biased to the trip's centre), `GET /places/<N|W|R><id>` -> Nominatim lookup
+  (extratags: hours, website, phone, fee, wheelchair, cuisine, wikidata) ->
+  Wikidata (enwiki title + P18 image) -> Wikipedia REST summary. No wikidata tag:
+  Wikipedia geosearch within 150 m + name match (word-set + char similarity,
+  >= 0.75; Roye's "by name" idea made location-safe). P18 photo beats Wikipedia's
+  lead image (Eiffel Tower's is a logo). In-process TTL caches (24 h / 7 d),
+  Nominatim spaced to 1 req/s (its policy), User-Agent names the app, http(s)-only
+  URLs reach the page. Prometheus counters `tripsync_places_upstream_requests_total`
+  and `tripsync_places_cache_total`. Overpass was tried and rejected: its public
+  server is overloaded and asks automated apps not to use it.
+- Migration `6216cec9128c`: stops get osm_ref, category, photo_url, website,
+  opening_hours (a copy, so they show offline); days get travel_mode. All nullable
+  (expand rule). New deps: requests, cachetools. 78 pytest (places fully mocked).
+- Frontend: "+ Add a place" = type-ahead search (300 ms debounce, stale answers
+  ignored) -> details card -> add; "Add by hand" kept. Trip page is map-first:
+  itinerary left, sticky full-height map right (map on top on phones); hover a
+  stop = highlighted pin, click a pin = scroll to the stop, search results =
+  temporary grey pins. Drag and drop with @dnd-kit (core 6.3.1 / sortable 10):
+  grip handle, mouse 5 px / touch 200 ms hold / keyboard; a drop becomes
+  reorderStops or moveStop + reorderStops ops (works offline). Stop rows show
+  photo, category, hours, website; straight-line distance between stops. Wikimedia
+  photos cached by the service worker. Fixed: a change made during a sync's final
+  refresh waited for the 30 s retry (flush now loops; test proves it).
+- Next: real routes + travel times via OpenRouteService (free key; Roye to sign
+  up; key in a k8s Secret, calls via the backend with a cache).
+
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
 changes.
@@ -301,7 +331,10 @@ changes.
 open sign-up, every trip private to its owner, no trip sharing, no email
 verification or password reset (no mail provider). Every query is scoped to the
 logged-in user, with a pytest per endpoint proving user A can't reach user B's
-data (404, not 403, so IDs don't leak). Rate limits on login/sign-up. No Google Places API (stops entered manually); no full offline
+data (404, not 403, so IDs don't leak). Rate limits on login/sign-up. **Place search (changed 2026-10-16, Roye's
+decision, "keep it free"):** Photon (OSM) search + Nominatim/Wikidata/Wikipedia
+details through the backend; no Google Places, no ratings (no free legitimate
+source); stops can still be entered by hand. No full offline
 tile prefetch (Workbox opportunistic caching only); export is PDF + Google Maps
 link only (no GPX/KML); Jenkins stays outside Kubernetes by design. GitOps with
 Argo CD is an **optional ~4h stretch sprint** after the core plan (it can be pulled
