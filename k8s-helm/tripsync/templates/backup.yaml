@@ -1,0 +1,152 @@
+{{- /*
+Nightly backup to the NFS server (the cluster's `nfs-client` StorageClass, a
+folder per volume on the NFS box), outside Longhorn and outside the cluster
+nodes' disks:
+
+  /db/tripsync-YYYY-MM-DD.dump      pg_dump in "custom" format (compressed,
+                                    restorable table by table); last 14 kept
+  /photos/current/...               mirror of the Garage photo bucket (rclone)
+  /photos/deleted/YYYY-MM-DD/...    photos deleted in the app that day, kept 30
+                                    days, so a wrong click can be undone
+  /LAST_RUN.txt                     when it last succeeded, and sizes
+
+Limits, said plainly: the NFS server is in the same building as the cluster,
+so this protects against losing the cluster (disks, Longhorn, a bad deploy,
+a wrong delete), not against losing the building. Restore steps:
+docs/backup-restore.md in this repo.
+
+Only rendered where the nfs-client StorageClass exists (the homelab k3s). EKS
+has none and gets no backup job.
+*/ -}}
+{{- if and .Values.backup.enabled (lookup "storage.k8s.io/v1" "StorageClass" "" .Values.backup.storageClassName) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tripsync-backups
+  namespace: {{ .Values.namespace }}
+  annotations:
+    # helm uninstall leaves the backups alone (like the database volume).
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.backup.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tripsync-backup
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  timeZone: {{ .Values.backup.timeZone | quote }}
+  # Never two backups at once; a missed run (cluster down) is skipped, not
+  # replayed in a burst.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: tripsync-backup
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          # Init containers run one after the other, so the database dump is
+          # finished (or the job failed) before the photo copy starts.
+          initContainers:
+            - name: database
+              image: {{ .Values.postgres.image }}
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /backups/db
+                  file=/backups/db/tripsync-$(date +%F).dump
+                  # Custom format (-Fc): compressed, and pg_restore can bring
+                  # back single tables. Written to .tmp first, so a failed dump
+                  # never replaces a good one.
+                  pg_dump -h tripsync-postgres -U tripsync -d tripsync -Fc -f "$file.tmp"
+                  mv "$file.tmp" "$file"
+                  find /backups/db -name 'tripsync-*.dump' -mtime +{{ .Values.backup.keepDays }} -delete
+                  ls -lh /backups/db | tail -3
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: tripsync-secrets
+                      key: postgres-password
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+          containers:
+            - name: photos
+              image: {{ .Values.backup.rcloneImage }}
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  today=$(date +%F)
+                  {{- if .Values.garage.enabled }}
+                  # Mirror the bucket. Files deleted from the bucket since the
+                  # last run are moved to deleted/<today> instead of vanishing.
+                  rclone sync garage:tripsync-photos /backups/photos/current \
+                    --backup-dir /backups/photos/deleted/$today --stats-one-line -v
+                  rclone delete /backups/photos/deleted --min-age 30d --rmdirs || true
+                  {{- end }}
+                  {
+                    echo "last successful backup: $(date -u +%FT%TZ)"
+                    du -sh /backups/db /backups/photos 2>/dev/null || true
+                  } > /backups/LAST_RUN.txt
+                  cat /backups/LAST_RUN.txt
+              env:
+                - name: HOME
+                  value: /tmp
+                # rclone reads its whole configuration from env vars:
+                # RCLONE_CONFIG_<NAME>_<OPTION> defines a remote called "garage".
+                - name: RCLONE_CONFIG_GARAGE_TYPE
+                  value: s3
+                - name: RCLONE_CONFIG_GARAGE_PROVIDER
+                  value: Other
+                - name: RCLONE_CONFIG_GARAGE_ENDPOINT
+                  value: http://tripsync-garage:3900
+                - name: RCLONE_CONFIG_GARAGE_REGION
+                  value: garage
+                - name: RCLONE_CONFIG_GARAGE_FORCE_PATH_STYLE
+                  value: "true"
+                - name: RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: tripsync-secrets
+                      key: s3-access-key-id
+                - name: RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: tripsync-secrets
+                      key: s3-secret-access-key
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: tripsync-backups
+{{- end }}

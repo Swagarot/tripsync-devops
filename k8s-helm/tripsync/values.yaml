@@ -43,4 +43,15 @@ garage:
     requests: { cpu: 25m, memory: 64Mi }
     limits:   { cpu: 500m, memory: 512Mi }
 
+backup:
+  # Nightly pg_dump + photo mirror to the NFS server. Only rendered where this
+  # StorageClass exists (the homelab k3s), see templates/backup.yaml.
+  enabled: true
+  storageClassName: nfs-client
+  storage: 30Gi
+  schedule: "30 3 * * *"        # 03:30 every night
+  timeZone: Asia/Jerusalem
+  keepDays: 14                  # database dumps older than this are deleted
+  rcloneImage: rclone/rclone:1.75.1
+
 namespace: tripsync

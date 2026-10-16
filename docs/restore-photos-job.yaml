@@ -1,0 +1,39 @@
+# One-off Job: copy the photo backup (NFS) back into the Garage bucket.
+#   kubectl --context default -n tripsync apply -f docs/restore-photos-job.yaml
+#   kubectl --context default -n tripsync logs -f job/tripsync-restore-photos
+#   kubectl --context default -n tripsync delete job tripsync-restore-photos
+# `rclone copy` only adds files that are missing in the bucket; it never deletes.
+# To bring back photos deleted in the app, change SOURCE to
+# /backups/photos/deleted/<date>.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tripsync-restore-photos
+  namespace: tripsync
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
+      containers:
+        - name: restore
+          image: rclone/rclone:1.75.1
+          command: ["sh", "-c", "rclone copy \"$SOURCE\" garage:tripsync-photos --stats-one-line -v"]
+          env:
+            - { name: SOURCE, value: /backups/photos/current }
+            - { name: HOME, value: /tmp }
+            - { name: RCLONE_CONFIG_GARAGE_TYPE, value: s3 }
+            - { name: RCLONE_CONFIG_GARAGE_PROVIDER, value: Other }
+            - { name: RCLONE_CONFIG_GARAGE_ENDPOINT, value: "http://tripsync-garage:3900" }
+            - { name: RCLONE_CONFIG_GARAGE_REGION, value: garage }
+            - { name: RCLONE_CONFIG_GARAGE_FORCE_PATH_STYLE, value: "true" }
+            - name: RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: tripsync-secrets, key: s3-access-key-id } }
+            - name: RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: tripsync-secrets, key: s3-secret-access-key } }
+          volumeMounts:
+            - { name: backups, mountPath: /backups, readOnly: true }
+      volumes:
+        - name: backups
+          persistentVolumeClaim: { claimName: tripsync-backups }

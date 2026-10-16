@@ -427,6 +427,13 @@ travel times):
 - **Backups (decided): nightly to the NFS server** (`nfs-client` StorageClass):
   pg_dump + rclone sync of the photo bucket. Same building, so not disaster-proof;
   R2 (10 GB free) discussed as the offsite option.
+  Built: `templates/backup.yaml` (rendered only if the `nfs-client` StorageClass
+  exists, via `lookup`), PVC `tripsync-backups` (30Gi, keep; the class has
+  archiveOnDelete=true), CronJob 03:30 Asia/Jerusalem, Forbid concurrency:
+  init container pg_dump -Fc (14 days), then rclone 1.75.1 sync of the bucket with
+  --backup-dir for deleted photos (30 days), LAST_RUN.txt. Alert
+  TripsyncBackupMissing (>26 h since kube_cronjob_status_last_successful_time).
+  Restore guide: `docs/backup-restore.md` + `docs/restore-photos-job.yaml`.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage

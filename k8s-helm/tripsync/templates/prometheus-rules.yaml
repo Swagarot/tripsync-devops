@@ -85,6 +85,19 @@ spec:
             summary: TripSync photo storage is down
             description: The Garage pod has not been ready for 5 minutes. Photo uploads and your own photos are unavailable.
 
+        # The nightly backup hasn't succeeded for over a day (failed, or the
+        # CronJob isn't running). A single failed Job is also reported by the
+        # built-in KubeJobFailed; this one catches "silently not running".
+        - alert: TripsyncBackupMissing
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="{{ .Values.namespace }}", cronjob="tripsync-backup"} > 26 * 3600
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: TripSync backup is overdue
+            description: The last successful nightly backup was over 26 hours ago. Check the tripsync-backup CronJob's Jobs.
+
     - name: tripsync.quality
       rules:
         # Share of backend responses that are server errors (5xx) over the
