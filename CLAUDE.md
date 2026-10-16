@@ -504,15 +504,30 @@ screen (feedback addressed above).
    (he must defend it). This is now the biggest risk, more than any feature.
 2. **Build collaborative trips + expense splitting (IN SCOPE since 2026-10-16),**
    see "Collaborative trips" below.
-3. Trip keepsake: single downloadable HTML file (Roye: later).
-4. Week 8: PDF export + Google Maps link, polish, final review.
-5. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
+3. **Mitigate the Longhorn single point of failure (IN SCOPE, Roye 2026-10-16;
+   approach not chosen yet).** What actually fails today: (a) shared fate: Postgres,
+   Garage, Prometheus and Loki all sit on Longhorn, so a Longhorn bug / bad upgrade /
+   mistake in longhorn-system hits all of them, replicas included; (b) only 2 storage
+   nodes: after losing a worker every volume has ONE copy until it returns; (c) the
+   only copy outside Longhorn is the nightly NFS backup (same building). Options:
+   A) Longhorn backup target on the NFS server + recurring snapshot/backup jobs
+      (whole-volume restore in minutes) - small;
+   B) alerts on Longhorn health (degraded volumes, rebuilding replicas, disk usage;
+      ServiceMonitor for longhorn-manager) - small;
+   C) Postgres replication independent of Longhorn (2 instances on local disks,
+      e.g. CloudNativePG) - medium/large, strongest answer;
+   D) a third storage node / 3-node Garage - needs hardware or the control node;
+   E) offsite copy (Cloudflare R2, 10 GB free) - small, needs a payment method.
+   Claude's suggestion: A + B as the scope, C as stretch.
+4. Trip keepsake: single downloadable HTML file (Roye: later).
+5. Week 8: PDF export + Google Maps link, polish, final review.
+6. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
    Secret there), backups (no nfs-client on EKS -> backup job not rendered),
    check `aws ec2 describe-volumes` after destroy.
-6. Jenkins: the frontend job also builds on tripsync-devops commits despite
+7. Jenkins: the frontend job also builds on tripsync-devops commits despite
    `poll: false` (Roye didn't trigger builds by hand); check that job's
    Polling Log / SCM config.
-7. Small: `dynamodb_table` -> `use_lockfile` in terraform/aws backend; offsite
+8. Small: `dynamodb_table` -> `use_lockfile` in terraform/aws backend; offsite
    backup (R2) would close the same-building gap.
 
 **Collaborative trips (IN SCOPE, Roye 2026-10-16; not built yet).** Plan: `trip_members(trip_id, user_id, role owner|editor|
@@ -531,6 +546,98 @@ edits/deletes can't leave them stale. Equal split; the leftover cent goes to one
 person so shares add up exactly; amounts converted to the trip's home currency
 (existing ECB rates); "settle up" shows a minimal set of payments (net balances,
 then match biggest debtor with biggest creditor).
+
+## Explained (for Roye's final document and slides)
+
+Written 2026-10-16 after the big build session; Roye "mostly understands, with
+gaps" and will close them when the project is nearly done. Weighted to the
+DevOps parts (the app is not the main point of the course). Keep this updated
+when things change; it's the source for the doc and the PowerPoint.
+
+**Big picture.** Browser -> HTTPS -> Cloudflare -> outbound tunnel (cloudflared
+pods) -> ingress-nginx -> `/api/*` backend (Flask) -> Postgres (StatefulSet,
+Longhorn) and Garage (photos, S3 API, Longhorn) and outside APIs; `/*` frontend
+(nginx + React PWA). Prometheus/Grafana/Loki watch everything; nightly backup to
+the NFS server. Delivery: git push -> Jenkins polls -> lint + tests in throwaway
+containers -> image tagged with the commit SHA -> Docker Hub -> helm upgrade
+--atomic.
+
+**Postgres in Kubernetes.** StatefulSet (not Deployment): stable identity, its own
+PVC that outlives `helm uninstall`, and never two copies at once during an update
+(a Deployment's rolling update would briefly run two Postgres on the same files).
+Longhorn keeps the volume on both workers, so a dead worker means the pod restarts
+on the other one (~1 min). Headless Service (DNS -> pod IP) is required by a
+StatefulSet. Q: why not managed/operator? A: homelab, one instance, simpler;
+trade-off is no automatic failover.
+
+**Secrets nobody types.** The chart generates the Postgres password, JWT key and
+Garage keys on first install; `lookup` reuses the live values on every later
+upgrade (a new password would lock the backend out: Postgres only reads it on first
+start; a new JWT key logs everyone out). Verified against the live Secret before
+deploying. `helm.sh/resource-policy: keep` so uninstall never separates the Secret
+from the data it unlocks. Hand-made Secrets (never in git): cloudflared-token,
+openrouteservice, alertmanager-discord.
+
+**Migrations on deploy.** Alembic files in git; the `migrate` init container runs
+`flask db upgrade` before the new backend starts. Failure -> new pod never ready,
+old pod keeps serving, `--atomic` rolls back. Rule: old code must work on the new
+schema (both run during a rolling update) -> add columns nullable/defaulted
+("expand/contract"). Advisory lock so two pods don't migrate at once. Q: what if a
+migration breaks? A: CI runs every migration on a real Postgres first; in the
+cluster a failure rolls back.
+
+**Health checks.** Liveness `/health/live` = "is the process stuck?" (restart);
+must NOT check the DB or a DB outage restarts every pod in a loop. Readiness
+`/health/ready` runs SELECT 1 = "can I serve?" (removed from the Service, no
+restart). Garage readiness is a TCP check: /health is 503 until it's set up, and
+setup goes through its Service -> deadlock otherwise.
+
+**CI tests.** Backend: pytest against a throwaway Postgres on a per-build Docker
+network, migrations first (real production schema); 155 tests incl. isolation
+tests (Bob calls every ID-taking endpoint on Alice's data -> 404) and a
+query-count test (N+1 guard). Frontend: 55 Vitest tests on logic (offline queue,
+conflicts, routes, weather rules, currency). Q: why 404 not 403? A: 403 confirms
+the ID exists.
+
+**Cloudflare Tunnel.** cloudflared connects OUT to Cloudflare; visitors reach
+Cloudflare over HTTPS and requests come back down that connection: no router
+ports, no public IP. HTTPS was required for the service worker (offline) and app
+install. 2 replicas on different workers. Behind the tunnel all requests come
+from cloudflared pods, so rate limits use CF-Connecting-IP (set by Cloudflare,
+not forgeable through it).
+
+**Photo storage and backups.** Object storage, the DB keeps only a row per photo
+(big, write-once, never queried; keeps DB and its backups small; same S3 API as
+AWS). Garage because MinIO's free images were pulled in 2025. storage-init
+bootstraps Garage via its admin API (layout, bucket, our Helm-generated key),
+every step repeatable. One node (tested: 2 nodes refuse uploads with one down,
+real availability needs 3; Postgres is the limit anyway). Nightly CronJob to NFS:
+pg_dump (14 days) + rclone photo mirror (deleted photos kept 30 days); verified by
+restoring into a scratch DB (counts matched); TripsyncBackupMissing alert (>26 h).
+Gap: NFS is in the same building.
+
+**Monitoring additions.** Alerts: database down, photo storage down, backup
+missing (+ Week 5's backend/frontend down, error rate, slow). Metrics labelled by
+route template (/trips/<uuid:trip_id>) not the URL, else every trip ID is a new
+time series forever (high cardinality). Counters for outside-API calls vs cache
+hits.
+
+**Performance (measured, then fixed).** N+1: a trip page was 40 queries (one per
+day, one per stop) -> selectinload = fixed (<= 8). nginx sent JS uncompressed (375
+kB) -> gzip 87 kB. Code splitting: the big map library loads only on the trip page.
+
+**Security summary.** scrypt password hashes; 7-day JWT (long on purpose for
+offline); same timing for unknown email vs wrong password; rate limits on login,
+sign-up, search, uploads; photos re-encoded (GPS stripped) and served by signed,
+expiring URLs (an <img> can't send the token); non-root containers.
+
+**The app (brief).** Offline-first: every edit is a small "op", applied on screen
+at once, saved in IndexedDB, sent in order when online; IDs made on the device (so
+offline items keep them) and creating twice with the same ID is a no-op (safe
+retries). Service worker keeps the app itself for offline. Outside services (maps
+OpenFreeMap, search Photon, details Nominatim + Wikipedia, routes OpenRouteService,
+transit Transitous, weather Open-Meteo, rates ECB) all go through the backend: one
+shared cache, keys stay on the server, we control call rates (ORS: 200 routes/day).
 
 ## Scope (locked, do not silently re-expand)
 
