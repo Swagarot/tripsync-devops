@@ -338,6 +338,27 @@ travel times):
   blank name becomes "Trip to <destination>". The map can't leave the world
   (minZoom 2, maxBounds, noWrap). Wide screens: itinerary 480-720 px on the left,
   map takes the rest (Roye's 2000 px screenshot showed a world map with a grey band).
+- Map-first redesign (2026-10-16, Roye's spec; backend `c2591e1`, frontend
+  `a6cd48a`, migration `5f9384175d2d`, **explanation pending**): trip page = full-
+  screen map + frosted panel (desktop, `color-mix` + `backdrop-filter`, solid on
+  hover/focus, collapsible) / bottom sheet with peek-half-full snaps (phones).
+  Tabs: Itinerary, Ideas (saved places, hollow pins, "Add to day" = createStop +
+  deleteItem), Expenses (entered in paid currency, totals in trip.home_currency via
+  ECB rates from Frankfurter, cached in IndexedDB), Notes + checklist, Weather
+  (Open-Meteo 16-day forecast per ~10 km cell; rules in `src/trip/weather.js`:
+  storms, heavy rain >=70% & >=5 mm, snow, >=35°, <=-5°, wind >=50 km/h; outdoor
+  stops by category regex are named in the warning; badge on the Weather tab).
+  Backend: `extras.py` = one generic owner-checked CRUD for ideas/expenses/checklist
+  (`/trips/<id>/<kind>`, `/<kind>/<id>`), Numeric(12,2) money; `travelinfo.py` =
+  `/rates`, `/weather` (cached); GET /trips adds `preview` (days, places, <=50
+  points, first photo) for the cards (cover photo + non-interactive Leaflet mini
+  map). Frontend ops gained createItem/updateItem/deleteItem(kind). Stops/days
+  keep only the grip + text visible; actions behind a "⋯" toggle. Category emoji
+  when a place has no photo. Fixed: routes were drawn DASHED (Leaflet keeps
+  dashArray when only the style changes; route vs straight line now have different
+  keys). Gunicorn 26 control-socket error fixed (user gets a home dir).
+  Ratings: none (no free legitimate source; Google Places has a free monthly cap
+  but needs billing + restrictive terms; decided against). 116 pytest, 49 Vitest.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
