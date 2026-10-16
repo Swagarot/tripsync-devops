@@ -472,6 +472,23 @@ travel times):
   OS live; map style per theme (OpenFreeMap liberty / dark / fiord); picture
   tiles get a CSS invert filter in dark themes. Map only refits when pins change
   (not when the drawer toggles) but pads for the drawer/search bar.
+  Zoom +/- moved to the side away from search/drawer (topright; topleft for RTL;
+  below the search bar on phones).
+- Stays / lodging (backend `a6574bd`, migration `edd21af5869e`): `lodgings` is a 4th
+  extras kind (name, place fields, check_in, check_out, bookends default true;
+  check_out >= check_in checked on create and update). Frontend `src/trip/stays.js`:
+  `dayEnds(day, lodgings)` = stays covering the date with bookends; moving day
+  (check_out of one = check_in of another) starts at the old, ends at the new;
+  `dayPoints` = [start, stops with coords, end] -> used by routes (dayRouteRequest),
+  leg numbering (legInto), the map (straight fallback + pin-to-road connectors) and
+  the 🛏 pin. Itinerary shows "Where you're staying" (dates, nights, switch) and
+  Start/End rows per day. Quick-add target "Where I'm staying" (dates = trip dates).
+- Dark/Dim visibility (measured): text was fine (>= 5:1) but control borders were
+  1.3-1.5:1 -> `--control-border` (dark #696a68, dim #6a7078, both >= 3:1 = WCAG
+  non-text minimum) on buttons/inputs/selects/empty stars; Leaflet controls,
+  tooltips and attribution themed (scoped under .trip-screen because leaflet.css
+  loads later and wins otherwise); route lines get a light casing (agency colours
+  like Oedo navy vanished on dark maps); walking dots light grey on dark maps.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
