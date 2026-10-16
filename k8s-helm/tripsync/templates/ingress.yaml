@@ -15,7 +15,12 @@ spec:
   rules:
     - http:
         paths:
-          - path: /api(/|$)(.*)
+          # (?!metrics...) = "not followed by metrics": /api/metrics doesn't
+          # match here, falls through to the frontend Ingress and gets the
+          # app's index.html. So Prometheus's /metrics stays cluster-internal
+          # (Prometheus scrapes the pod directly, not through the Ingress),
+          # which matters now that the Cloudflare Tunnel makes this public.
+          - path: /api(/|$)((?!metrics(/|$)).*)
             pathType: ImplementationSpecific
             backend:
               service:
