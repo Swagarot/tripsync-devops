@@ -460,6 +460,18 @@ travel times):
     search prefilled with the stop's name; picking fills name/category/address/
     position/photo/hours (rating, own photos, notes kept). For stops typed by hand
     offline.
+- Google-Maps-style UI (2026-10-16, Roye's spec): trip page has no app header;
+  floating search bar (PlaceSearch `compact`: ☰ inside, results drop down, place
+  card has an "Add to" select: any day / a new day / Ideas, resets afterwards)
+  and a square full-height drawer, closed by default, from the left or the right
+  for RTL languages (`RTL_LANGUAGES` in settings.js; only layout is mirrored, the
+  UI text stays English). Phone: bottom sheet (peek 150 px = name + tabs, ☰ =
+  half). App menu (`components/AppMenu.jsx`: all trips, names language, theme,
+  account) in the drawer footer and in a header popover on other pages. Themes
+  light / dark / dim (Twitter's navy) via <html data-theme>, "system" follows the
+  OS live; map style per theme (OpenFreeMap liberty / dark / fiord); picture
+  tiles get a CSS invert filter in dark themes. Map only refits when pins change
+  (not when the drawer toggles) but pads for the drawer/search bar.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
