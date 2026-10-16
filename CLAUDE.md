@@ -502,7 +502,8 @@ screen (feedback addressed above).
 **Open items, roughly in order:**
 1. **Walkthrough for Roye** of everything marked "explanation pending" above
    (he must defend it). This is now the biggest risk, more than any feature.
-2. Decide on collaborative trips (shared editing), see "Under consideration".
+2. **Build collaborative trips + expense splitting (IN SCOPE since 2026-10-16),**
+   see "Collaborative trips" below.
 3. Trip keepsake: single downloadable HTML file (Roye: later).
 4. Week 8: PDF export + Google Maps link, polish, final review.
 5. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
@@ -514,20 +515,28 @@ screen (feedback addressed above).
 7. Small: `dynamodb_table` -> `use_lockfile` in terraform/aws backend; offsite
    backup (R2) would close the same-building gap.
 
-**Under consideration (not decided, 2026-10-16): collaborative trips.** Sketch
-if Roye adds it to scope: `trip_members(trip_id, user_id, role owner|editor|
+**Collaborative trips (IN SCOPE, Roye 2026-10-16; not built yet).** Plan: `trip_members(trip_id, user_id, role owner|editor|
 viewer)`, invite by link (signed token, no email provider), every owner check
 in trips.py / extras.py / photos.py goes through one "is member with role"
 helper (they're already centralised: find_trip/find_day/find_stop/find_child/
 find_photo + list), isolation tests extended per role, trip list includes
 shared trips, other people's changes picked up by polling (or SSE later),
 last-write-wins per field (ops are field-level PATCHes; reorder conflicts are
-already refused + refreshed). Estimated about a day.
+already refused + refreshed). Estimated about a day. Out of scope: live
+co-editing (websockets/cursors).
+**Expense splitting (IN SCOPE, Roye 2026-10-16; not built yet):** each expense
+stores only facts: `paid_by` (a member) and `split_between` (members, default
+everyone). Balances ("who owes whom") are computed when shown, never stored, so
+edits/deletes can't leave them stale. Equal split; the leftover cent goes to one
+person so shares add up exactly; amounts converted to the trip's home currency
+(existing ECB rates); "settle up" shows a minimal set of payments (net balances,
+then match biggest debtor with biggest creditor).
 
 ## Scope (locked, do not silently re-expand)
 
 **Multi-account** (changed from single-user on 2026-10-16, Roye's decision):
-open sign-up, every trip private to its owner, no trip sharing, no email
+open sign-up, trips private to their members (**shared trips + expense
+splitting added to scope later the same day**, see Open items), no email
 verification or password reset (no mail provider). Every query is scoped to the
 logged-in user, with a pytest per endpoint proving user A can't reach user B's
 data (404, not 403, so IDs don't leak). Rate limits on login/sign-up. **Place search (changed 2026-10-16, Roye's
