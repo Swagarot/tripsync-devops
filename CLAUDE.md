@@ -434,6 +434,16 @@ travel times):
   --backup-dir for deleted photos (30 days), LAST_RUN.txt. Alert
   TripsyncBackupMissing (>26 h since kube_cronjob_status_last_successful_time).
   Restore guide: `docs/backup-restore.md` + `docs/restore-photos-job.yaml`.
+  **Verified live 2026-10-16:** storage-init bootstrapped Garage in the cluster;
+  photo upload/rating/offline-queue e2e passed on the public URL; a manual backup
+  Job wrote the dump (17 KB) + photo mirror to NFS; the dump was restored into a
+  scratch DB (`restore_check`) with identical row counts and migration version,
+  then dropped. Test account + its Garage objects deleted afterwards.
+- WebGL2 fallback (frontend `db28b78`): Roye's PC browser has no WebGL2 (graphics
+  acceleration off / GPU blocklisted; check chrome://gpu), MapLibre threw
+  "WebGL2 is required" and the map crashed. BaseMap now checks
+  `canvas.getContext("webgl2")` and falls back to OSM raster tiles (local-language
+  labels, note in the attribution). Tested with Chrome `--disable-webgl2`.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage

@@ -107,7 +107,10 @@ spec:
                   # last run are moved to deleted/<today> instead of vanishing.
                   rclone sync garage:tripsync-photos /backups/photos/current \
                     --backup-dir /backups/photos/deleted/$today --stats-one-line -v
-                  rclone delete /backups/photos/deleted --min-age 30d --rmdirs || true
+                  # Only once something was ever deleted (else rclone logs errors).
+                  if [ -d /backups/photos/deleted ]; then
+                    rclone delete /backups/photos/deleted --min-age 30d --rmdirs
+                  fi
                   {{- end }}
                   {
                     echo "last successful backup: $(date -u +%FT%TZ)"
