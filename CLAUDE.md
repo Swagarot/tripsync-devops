@@ -332,6 +332,12 @@ travel times):
   `tripsync_routes_upstream_requests_total{outcome}` / `tripsync_routes_cache_total`.
   Also fixed: "Add to day" waits for place details, so a quick tap no longer
   saves a stop without photo/hours.
+- "Where to?" (migration `cf9844cd1d94`): trips get destination, dest_lat,
+  dest_lng, dest_zoom (search results now carry a zoom: country 5, city 11...).
+  Empty trips open the map on the destination; place search is biased to it; a
+  blank name becomes "Trip to <destination>". The map can't leave the world
+  (minZoom 2, maxBounds, noWrap). Wide screens: itinerary 480-720 px on the left,
+  map takes the rest (Roye's 2000 px screenshot showed a world map with a grey band).
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
