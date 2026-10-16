@@ -489,10 +489,40 @@ travel times):
   tooltips and attribution themed (scoped under .trip-screen because leaflet.css
   loads later and wins otherwise); route lines get a light casing (agency colours
   like Oedo navy vanished on dark maps); walking dots light grey on dark maps.
+- Home button (frontend `cbed96b`): house icon -> "/" in the search bar (after ☰)
+  and at the top of the drawer (before the trip name); Roye couldn't find a way
+  back to the trips list (it was only in the drawer's menu).
 
-Next: test on a phone (install, offline); Week 8 export
-(PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
-changes.
+**State at the end of 2026-10-16 (one long session, all built by Claude):**
+deployed on k3s and public at https://tripsync.royerandomnonsense.uk; backend
+155 pytest, frontend 55 Vitest, all green; backups verified by a real restore.
+Roye tested offline add + sync on his phone (works) and the UI on a 2000 px
+screen (feedback addressed above).
+
+**Open items, roughly in order:**
+1. **Walkthrough for Roye** of everything marked "explanation pending" above
+   (he must defend it). This is now the biggest risk, more than any feature.
+2. Decide on collaborative trips (shared editing), see "Under consideration".
+3. Trip keepsake: single downloadable HTML file (Roye: later).
+4. Week 8: PDF export + Google Maps link, polish, final review.
+5. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
+   Secret there), backups (no nfs-client on EKS -> backup job not rendered),
+   check `aws ec2 describe-volumes` after destroy.
+6. Jenkins: the frontend job also builds on tripsync-devops commits despite
+   `poll: false` (Roye didn't trigger builds by hand); check that job's
+   Polling Log / SCM config.
+7. Small: `dynamodb_table` -> `use_lockfile` in terraform/aws backend; offsite
+   backup (R2) would close the same-building gap.
+
+**Under consideration (not decided, 2026-10-16): collaborative trips.** Sketch
+if Roye adds it to scope: `trip_members(trip_id, user_id, role owner|editor|
+viewer)`, invite by link (signed token, no email provider), every owner check
+in trips.py / extras.py / photos.py goes through one "is member with role"
+helper (they're already centralised: find_trip/find_day/find_stop/find_child/
+find_photo + list), isolation tests extended per role, trip list includes
+shared trips, other people's changes picked up by polling (or SSE later),
+last-write-wins per field (ops are field-level PATCHes; reorder conflicts are
+already refused + refreshed). Estimated about a day.
 
 ## Scope (locked, do not silently re-expand)
 
