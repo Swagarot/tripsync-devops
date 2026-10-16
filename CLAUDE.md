@@ -279,9 +279,19 @@ Week 7 (2026-10-16, built by Claude, **explanation pending**), frontend `dd96e9b
   Secret `cloudflared-token` (key `token`, ns `tripsync`, created by hand). Remotely
   managed tunnel; public hostname route in the dashboard ->
   `http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80`.
-  **Not applied yet** (needs Roye's token).
+  **Applied 2026-10-16; live at https://tripsync.royerandomnonsense.uk** (2
+  connectors, Haifa + Frankfurt edges). Offline e2e (service worker, IndexedDB,
+  sync) passed against the public URL; the test account was deleted afterwards.
+  Gotchas: the token Secret first held literal quotes (Windows `cmd` keeps `'`;
+  use `"` or none), so cloudflared said "token is not valid". The dashboard wizard only
+  offers the hostname step once a connector is connected, so apply first.
+  `/api/metrics` was publicly reachable through the `/api` Ingress (it was
+  already reachable over Tailscale before): the API Ingress regex now excludes
+  `metrics` (`f1c51fc`, deploys with the next app pipeline run).
+  Cloudflare's default Browser Cache TTL (4h) overrides nginx `no-cache` on
+  `sw.js`: set Caching -> Browser Cache TTL to "Respect Existing Headers".
 
-Next: apply the tunnel and test on a phone (install, offline); Week 8 export
+Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
 changes.
 
