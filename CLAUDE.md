@@ -238,9 +238,52 @@ Week 6 + the online half of Week 7 (2026-10-16, built by Claude in one session,
   Verified with headless Chrome: full flow, light/dark, 390px and desktop, no
   console errors.
 
-Next: Week 7 offline (service worker, local cache + sync queue using the
-client IDs, Leaflet map for picking coordinates, Cloudflare Tunnel for HTTPS,
-Jest stage); Week 8 export (PDF + Google Maps link), polish, final review.
+- **Deployed to k3s 2026-10-16** (backend `ccd241f`, release rev 46): Postgres on
+  Longhorn, tables migrated by the init container, readiness green. Rev 44 had
+  failed first: an upgrade ran the new chart with the OLD backend image (tag
+  9f4856a) about 5 min before the new image existed; its migrate init container
+  hit `runAsNonRoot` (old image runs as root), helm --atomic rolled back (rev 45).
+  Origin of rev 44 unknown (a manual build?). Ask Roye.
+
+Week 7 (2026-10-16, built by Claude, **explanation pending**), frontend `dd96e9b`:
+- Offline-first store (`src/store/`): every edit is an "op" (`ops.js`, pure,
+  idempotent apply + `toRequest`). `store.js` keeps base copies (last server
+  list / trips) and an outbox in IndexedDB (idb-keyval); the screen shows
+  base + pending ops (`hooks.js`, useSyncExternalStore). The sync loop sends the
+  outbox in order. Retry on no network / 5xx / 429 / 401; drop + show a message
+  on other 4xx; DELETE 404 = done. After syncing it refreshes from the server.
+  Logout wipes the device copy (with a warning if changes are unsynced); a 401
+  keeps it, and a different user logging in clears it.
+  Refreshes wait for the store to load (`loaded` promise; a race found over http).
+  `newId()` falls back to `crypto.getRandomValues` on plain http (randomUUID needs
+  a secure context). Auth works offline (user cached; only 401 logs out).
+- PWA: vite-plugin-pwa 2 (generateSW, registerType `prompt` + update banner),
+  manifest + icons (`public/`), navigateFallback to index.html except `/api/`,
+  OSM tiles CacheFirst (1000 tiles / 30 d, opportunistic only per scope).
+  nginx: no-cache for index.html / sw.js / manifest, immutable for `/assets/`,
+  manifest MIME type set.
+- Leaflet 1.9 + react-leaflet 5 (lazy-loaded chunk): trip map (pins per day,
+  colours shared with day badges, lines in visit order), "Pick on map" in the stop
+  form. divIcon pins (default marker images break under bundlers).
+- **Vitest instead of Jest** (Roye's decision 2026-10-16): 34 tests (ops,
+  sync queue against a fake server, storage per user, start-up race, helpers).
+  Jenkins "Unit tests" stage reuses the ESLint stage's node_modules, JUnit XML.
+- Verified with headless Chrome on compose: offline reload, offline edits +
+  new trip, survive reload, sync on reconnect (server state checked), and the full
+  flow over plain http on a non-localhost address.
+- Backend `3ebfba2`: rate limit keyed on `CF-Connecting-IP` when present (all
+  tunnel traffic arrives from cloudflared pods). Accepted gap: LAN/Tailscale
+  clients could spoof that header.
+- Cloudflare Tunnel: `terraform/k3s/tunnel.tf` (cloudflared 2026.10.1, 2
+  replicas, anti-affinity, `/ready` liveness, read-only root FS), token from
+  Secret `cloudflared-token` (key `token`, ns `tripsync`, created by hand). Remotely
+  managed tunnel; public hostname route in the dashboard ->
+  `http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80`.
+  **Not applied yet** (needs Roye's token).
+
+Next: apply the tunnel and test on a phone (install, offline); Week 8 export
+(PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
+changes.
 
 ## Scope (locked, do not silently re-expand)
 
@@ -260,7 +303,7 @@ Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 
 1. Checkout its own repo, plus this repo (for the chart)
 2. Lint in throwaway containers, in parallel: `helm lint`, flake8 or ESLint
-3. Unit tests: pytest against a throwaway Postgres (backend, done); Jest (Week 7)
+3. Unit tests: pytest against a throwaway Postgres (backend); Vitest (frontend)
 4. Build the image, tag = short Git SHA of **that app repo**
 5. Push to Docker Hub (`swagarot/tripsync-backend`, `swagarot/tripsync-frontend`)
 6. Deploy: `helm upgrade tripsync k8s-helm/tripsync --atomic
