@@ -376,6 +376,27 @@ travel times):
   sends "2966211"). Cached 12 h per pair+date. 124 pytest, 50 Vitest.
 - "Where to?" suggestions keep Photon's relevance order (areas before single
   places only); sorting by size put the airport (island) above the city.
+- Language for names (2026-10-16, Roye: "a global user can't read this"): header
+  picker (en, he, es, fr, de, it, ja, zh, ko; stored on the device,
+  `src/settings.js`). Map: OpenFreeMap vector tiles (liberty style, free, no key)
+  drawn by MapLibre GL 6.11.2 inside Leaflet via @maplibre/maplibre-gl-leaflet
+  (so pins/routes/drag-and-drop are unchanged); every name label's text-field is
+  replaced by coalesce(name:<lang>, name:en, name:latin, name). RTL (Hebrew) via the
+  bundled mapbox-gl-rtl-text plugin. Gotchas: maplibre-gl 6 has NO default export
+  (the build then fails with a misleading "filename ... Received '.'"), its worker
+  must be bundled with `?worker&url` + `setWorkerUrl`, the rtl package's exports
+  hide dist/ (imported by path). Trip-card mini maps stay raster (WebGL context
+  limit ~16). MapLibre chunk ~1 MB (277 kB gz), trip page only, precached.
+  Transit: Transitous `language` param; rides show mode name, from -> to station,
+  minutes, changes (Japan's GTFS has English, not French/Hebrew).
+  Details: Nominatim accept-language + Wikipedia in the user's language when that
+  wiki has the article (else English). Photon only supports en/de/fr.
+- **Decided next (Roye):** personal ratings + own photos per stop (keep famous
+  photos, own photo can be the cover), photo storage = object storage. **MinIO's
+  Docker Hub repo is gone (404; MinIO stopped free images in 2025)** -> use
+  **Garage** (dxflrs/garage v2.4.1, S3-compatible, maintained). Then a downloadable
+  single-file HTML keepsake (offline forever: itinerary, ratings, notes, photos,
+  map image).
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
