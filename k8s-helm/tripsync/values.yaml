@@ -30,4 +30,17 @@ postgres:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 512Mi }
 
+garage:
+  # Object storage for users' photos (S3 API). Off = photo uploads disabled.
+  enabled: true
+  image: dxflrs/garage:v2.4.1
+  # Empty = same StorageClass as Postgres (longhorn on k3s, gp3 on EKS).
+  storageClassName: ""
+  storage: 10Gi
+  # How much of the volume Garage may fill (a bit below the volume size).
+  capacityGb: 8
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
 namespace: tripsync

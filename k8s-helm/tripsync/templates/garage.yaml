@@ -1,0 +1,138 @@
+{{- /*
+Garage: S3-compatible object storage for users' photos (see the backend's
+storage.py). One node, data on its own PersistentVolume (Longhorn on k3s,
+gp3 on EKS), like Postgres.
+
+Why Garage and not MinIO: MinIO stopped publishing free container images in
+2025 (its Docker Hub repository is gone). Garage is small, maintained, and
+speaks the same S3 API, so the backend code doesn't care which one it is.
+
+Setup on first start (layout, bucket, access key) is done by the backend's
+`storage-init` init container through Garage's admin API; it's safe to repeat.
+Secrets (RPC secret, admin token) come from tripsync-secrets as env vars, so
+the config file below has none.
+*/ -}}
+{{- if .Values.garage.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tripsync-garage
+  namespace: {{ .Values.namespace }}
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "sqlite"
+    # One node, so one copy. The volume underneath (Longhorn) already keeps
+    # two copies on two workers.
+    replication_factor = 1
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+
+    [s3_api]
+    s3_region = "garage"
+    api_bind_addr = "[::]:3900"
+
+    [admin]
+    api_bind_addr = "[::]:3903"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tripsync-garage
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: tripsync-garage
+spec:
+  selector:
+    app: tripsync-garage
+  ports:
+    - name: s3
+      port: 3900
+      targetPort: 3900
+    - name: admin # also serves /metrics
+      port: 3903
+      targetPort: 3903
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tripsync-garage
+  namespace: {{ .Values.namespace }}
+spec:
+  serviceName: tripsync-garage
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tripsync-garage
+  template:
+    metadata:
+      labels:
+        app: tripsync-garage
+      annotations:
+        # Restart Garage when its config changes.
+        checksum/config: {{ .Values.garage | toJson | sha256sum | trunc 16 }}
+    spec:
+      # The image runs as root by default; run as an ordinary user. fsGroup
+      # makes the volume writable for it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: garage
+          image: {{ .Values.garage.image }}
+          ports:
+            - containerPort: 3900
+              name: s3
+            - containerPort: 3903
+              name: admin
+          env:
+            - name: GARAGE_RPC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tripsync-secrets
+                  key: garage-rpc-secret
+            - name: GARAGE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tripsync-secrets
+                  key: garage-admin-token
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/garage
+            - name: config
+              mountPath: /etc/garage.toml
+              subPath: garage.toml
+              readOnly: true
+          resources:
+            {{- toYaml .Values.garage.resources | nindent 12 }}
+          # Port checks, not GET /health: /health says 503 until the storage
+          # layout is assigned, and the backend's storage-init assigns it
+          # through this very Service. A /health readiness probe would keep
+          # Garage out of the Service forever (a deadlock).
+          readinessProbe:
+            tcpSocket:
+              port: 3903
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 3903
+            initialDelaySeconds: 15
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: tripsync-garage
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.garage.storageClassName | default .Values.postgres.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.garage.storage }}
+{{- end }}

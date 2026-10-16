@@ -34,6 +34,15 @@ services:
       # Optional: routes/travel times. Taken from your shell, never stored here:
       #   ORS_API_KEY=... docker compose up   (unset = straight lines only)
       ORS_API_KEY: ${ORS_API_KEY:-}
+      # Photo storage (Garage below). Local-only throwaway credentials; the
+      # access key id must look like "GK" + 24 hex characters.
+      S3_ENDPOINT: http://garage:3900
+      S3_BUCKET: tripsync-photos
+      S3_REGION: garage
+      S3_ACCESS_KEY_ID: GK0123456789abcdef01234567
+      S3_SECRET_ACCESS_KEY: "39437c241734251abfa14962a3cac939faf0e168d80508ce89196be057626326"
+      GARAGE_ADMIN_URL: http://garage:3903
+      GARAGE_ADMIN_TOKEN: local-dev-only-admin-token
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -43,11 +52,28 @@ services:
   migrate:
     build: ../tripsync-backend      # same image as backend (cached build)
     image: tripsync-backend:local
-    command: ["flask", "db", "upgrade"]
+    # Database schema, then Garage's layout/bucket/key (the cluster runs these
+    # as two init containers).
+    command: ["sh", "-c", "flask db upgrade && for i in $$(seq 1 20); do flask storage-init && exit 0; sleep 2; done; exit 1"]
     environment: *backend-env
     depends_on:
       postgres:
         condition: service_healthy
+      garage:
+        condition: service_started
+
+  garage:
+    image: dxflrs/garage:v2.4.1      # same as the chart
+    # Runs as root here (the cluster runs it as user 1000 with fsGroup): a new
+    # Docker named volume is owned by root, and this bare image has no folder
+    # to copy ownership from. Local dev only.
+    environment:
+      # Quoted: an unquoted all-digit value would be read by YAML as a number.
+      GARAGE_RPC_SECRET: "daf1c20974bfad62eadce4c0335394573166ad88127861f99263f9ba5606cf99"  # 64 hex, as Garage requires (local only)
+      GARAGE_ADMIN_TOKEN: local-dev-only-admin-token
+    volumes:
+      - ./compose/garage.toml:/etc/garage.toml:ro
+      - garagedata:/var/lib/garage
 
   frontend:
     build: ../tripsync-frontend
@@ -68,3 +94,4 @@ services:
 
 volumes:
   pgdata:                           # survives `docker compose down`; add -v to wipe it
+  garagedata:

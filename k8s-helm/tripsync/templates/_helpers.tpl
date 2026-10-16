@@ -29,4 +29,31 @@ so the two can't drift apart.
       name: openrouteservice
       key: api-key
       optional: true
+{{- if .Values.garage.enabled }}
+# Photo storage (Garage, S3 API). Without these the backend turns photo
+# uploads off and everything else keeps working.
+- name: S3_ENDPOINT
+  value: http://tripsync-garage:3900
+- name: S3_BUCKET
+  value: tripsync-photos
+- name: S3_REGION
+  value: garage
+- name: S3_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: tripsync-secrets
+      key: s3-access-key-id
+- name: S3_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: tripsync-secrets
+      key: s3-secret-access-key
+- name: GARAGE_ADMIN_URL
+  value: http://tripsync-garage:3903
+- name: GARAGE_ADMIN_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: tripsync-secrets
+      key: garage-admin-token
+{{- end }}
 {{- end }}

@@ -42,6 +42,28 @@ spec:
             {{- include "tripsync.backendEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+        {{- if .Values.garage.enabled }}
+        # Prepares Garage (storage layout, bucket, access key); safe to repeat.
+        # Not fatal: if Garage isn't reachable after ~2 minutes, the backend
+        # starts anyway (only photo uploads fail) and the next deploy retries.
+        - name: storage-init
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 40); do
+                flask storage-init --capacity-gb {{ .Values.garage.capacityGb }} && exit 0
+                echo "garage not ready yet, retrying in 3s"
+                sleep 3
+              done
+              echo "WARNING: photo storage not initialised; photos will not work until the next deploy"
+              exit 0
+          env:
+            {{- include "tripsync.backendEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+        {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

@@ -397,6 +397,36 @@ travel times):
   **Garage** (dxflrs/garage v2.4.1, S3-compatible, maintained). Then a downloadable
   single-file HTML keepsake (offline forever: itinerary, ratings, notes, photos,
   map image).
+- Memories (backend `ba9c3ab`, frontend `7c142f8`, migration `34de9c31a0f6`): stop
+  rating (1-5), visited, cover_photo_id; `stop_photos` table; photos.py: upload
+  (multipart, Pillow: must decode, exif_transpose, <=2048 px JPEG + 480 px thumb,
+  EXIF/GPS stripped, 50 MP bomb limit, max 15 MB, 30/stop), signed URLs (HMAC of
+  id+size+exp, exp = 1st of month after next, so URLs are stable for SW caching;
+  <img> can't send the JWT), delete removes the objects. storage.py: boto3 S3
+  client (path-style) + `flask storage-init` (admin API v2: layout if no role,
+  CreateBucket, ImportKey with OUR Helm-generated key, AllowBucketKey; 409 =
+  already done). Frontend: ☆ per stop -> stars, "Been here", photo grid, ★ = cover;
+  photo upload queue in IndexedDB (works offline, retries like the outbox).
+- Garage in the chart (`templates/garage.yaml`): 1-node StatefulSet,
+  dxflrs/garage:v2.4.1, uid 1000 + fsGroup, 10Gi (Longhorn; EKS gp3 via the
+  postgres class), secrets as env (GARAGE_RPC_SECRET/ADMIN_TOKEN). Readiness is a
+  TCP check on 3903, NOT /health: /health is 503 until the layout exists, and
+  storage-init sets the layout through the Service -> deadlock otherwise.
+  Backend `storage-init` init container (non-fatal after ~2 min). Secret
+  template now generates each key separately with `dig` (old Secret keeps the
+  Postgres password + JWT key; verified against the live Secret by hash). API
+  Ingress `proxy-body-size: 16m`. Alert TripsyncPhotoStorageDown.
+  Compose gotcha: an unquoted all-digit hex secret is a YAML number -> quote it.
+- **Storage topology decision (Roye, 2026-10-16): option A**, one Garage node on
+  Longhorn (2 replicas), same ~1 min failover story as Postgres. Tested locally: 2
+  Garage nodes with replication 2 keep READS up with one node down but REFUSE
+  WRITES ("Could not reach quorum of 2"); real write availability needs 3 nodes
+  (would mean a pod on the control node). Postgres is the app's availability limit
+  anyway. Roye's "one shared Longhorn volume" idea = RWX = NFS share-manager;
+  rejected for photos (locking, SPOF, not S3-portable, harder backups).
+- **Backups (decided): nightly to the NFS server** (`nfs-client` StorageClass):
+  pg_dump + rclone sync of the photo bucket. Same building, so not disaster-proof;
+  R2 (10 GB free) discussed as the offsite option.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage

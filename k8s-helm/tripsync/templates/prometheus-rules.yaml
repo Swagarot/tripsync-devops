@@ -73,6 +73,18 @@ spec:
             summary: TripSync database is down
             description: The Postgres pod has not been ready for 2 minutes. Logins and all trip data are unavailable.
 
+        # Photo storage. Trips keep working without it; uploading and showing
+        # your own photos doesn't.
+        - alert: TripsyncPhotoStorageDown
+          expr: |
+            kube_statefulset_status_replicas_ready{namespace="{{ .Values.namespace }}", statefulset="tripsync-garage"} == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: TripSync photo storage is down
+            description: The Garage pod has not been ready for 5 minutes. Photo uploads and your own photos are unavailable.
+
     - name: tripsync.quality
       rules:
         # Share of backend responses that are server errors (5xx) over the
