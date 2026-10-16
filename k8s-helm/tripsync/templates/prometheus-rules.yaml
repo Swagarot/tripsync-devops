@@ -59,6 +59,20 @@ spec:
             summary: TripSync frontend has no ready pods
             description: The frontend Deployment has had 0 available replicas for 2 minutes. The site is not loading.
 
+        # Postgres has no exporter, so again kube-state-metrics: is the one
+        # StatefulSet pod Ready (pg_isready passing)? When this fires,
+        # TripsyncBackendDown usually fires too (the backend's readiness check
+        # fails without the DB); this alert names the cause.
+        - alert: TripsyncDatabaseDown
+          expr: |
+            kube_statefulset_status_replicas_ready{namespace="{{ .Values.namespace }}", statefulset="tripsync-postgres"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: TripSync database is down
+            description: The Postgres pod has not been ready for 2 minutes. Logins and all trip data are unavailable.
+
     - name: tripsync.quality
       rules:
         # Share of backend responses that are server errors (5xx) over the

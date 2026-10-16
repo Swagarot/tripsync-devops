@@ -22,7 +22,7 @@ the what.
 |---|---|
 | `tripsync-backend` | Flask API, Dockerfile, tests, **Jenkinsfile** |
 | `tripsync-frontend` | Vite + React PWA, Dockerfile, `nginx.conf`, tests, **Jenkinsfile** |
-| `tripsync-devops` (this repo) | `k8s-helm/tripsync/` chart, `terraform/k3s`, `terraform/aws`, `docker-compose.yml` + `compose/gateway.conf`, this file. Monitoring configs are to be added |
+| `tripsync-devops` (this repo) | `k8s-helm/tripsync/` chart, `terraform/k3s`, `terraform/aws`, `docker-compose.yml` + `compose/gateway.conf`, `monitoring/` values, this file |
 
 `tripsync-app` is the old combined repo, now **archived** (read-only). Backend
 and frontend were split out of it with `git subtree split` (history kept). The
@@ -49,7 +49,7 @@ and adds a `gateway` nginx (`compose/gateway.conf`) on `localhost:8080` that
 mimics the two Ingresses: `/api/` to the backend with the prefix stripped,
 everything else to the frontend. Without it the frontend's relative `/api` calls
 hit `try_files` and get `index.html`. **Not yet tested** (no Docker on the
-laptop); test it in Week 6 when a `postgres` service is added for local dev.
+laptop at the time); tested end to end 2026-10-16 with postgres + migrate added.
 
 Week 4 done (2026-10-10), clean-slate test passed: `terraform apply` (54
 resources), then both pipelines with `TARGET=eks`, app served through the ELB,
@@ -164,23 +164,91 @@ alert rules. Retention about 7 days.
   `amtool check-config`; a hand-posted test alert routed to discord.
 - **Session end 2026-10-12: Week 5 core done** (metrics, logs, alerts, dashboard).
   Open at the start of next session:
-  1. Ask Roye whether the TripsyncTestAlert message arrived in Discord (not yet
-     confirmed; Alertmanager routed it to `discord` with no delivery errors).
-  2. Explain what Claude built (Roye asked for this): Loki/Alloy, the alert rules,
-     Alertmanager routing, the dashboard. The files are commented for this.
-  3. Longhorn failover test: drain the worker running Prometheus, confirm it
-     comes back on the other worker with its data.
-  4. Optional end-to-end alert test: scale the backend to 0 for ~3 min,
-     expect TripsyncBackendDown in Discord, then a resolved message.
-  Stretch: managed Prometheus for EKS (above). Then Week 6.
+  1. ~~Discord delivery~~: confirmed by Roye 2026-10-14, the test alert arrived.
+  2. ~~Explain what Claude built~~: done 2026-10-14 (Longhorn, Prometheus stack,
+     Loki/Alloy, rules, Alertmanager, dashboard, Grafana's no-volume design).
+     Roye wants a full end-to-end overview again when the project is finished.
+  3. ~~Longhorn failover test~~: passed 2026-10-14. Cordoned k8sworker1 and deleted
+     the Prometheus + Alertmanager pods (instead of a full drain, which would
+     also evict the cluster's Zabbix stack, the single ingress-nginx controller
+     and Longhorn components). Both came back Ready on k8sworker2 in <50s, Longhorn
+     reattached their volumes there (healthy, 2 replicas), Prometheus's oldest
+     sample (2026-10-12) and backend sample count were intact, 22/22 targets up.
+     Worker uncordoned. Not tested: a hard worker loss (power off).
+  4. ~~End-to-end alert test~~: done 2026-10-14. Backend scaled to 0 at 15:19:11
+     UTC; TripsyncBackendDown active in Alertmanager at 15:22:18 (target gone,
+     then the 2m `for:`), 1 Discord notification sent, 0 failures. Scaled back
+     to 1 at 15:22:44; alert cleared at 15:23:34; resolved message sent ~15:28
+     (2 sends, 0 failures). The resolved message waits for the group's next
+     `group_interval` (5m after the first send), so a ~5 min lag is expected.
+  **Week 5 closed 2026-10-14.** Stretch: managed Prometheus for EKS (above). Next: Week 6.
 
-Then: Week 6 backend features (Postgres, JWT, CRUD, pytest stage);
-Week 7 frontend + offline (Cloudflare Tunnel for HTTPS, Leaflet, service worker,
-Jest stage); Week 8 export, sync, polish, final review.
+Week 6 + the online half of Week 7 (2026-10-16, built by Claude in one session,
+**explanation to Roye pending**; tested locally, NOT yet pushed or deployed):
+- Scope change: multi-account (see Scope). Data model Trip -> Days -> Stops.
+- Backend restructured into a `tripsync/` package with `create_app()`; `app.py`
+  only builds the app (Gunicorn still runs `app:app`). Flask-SQLAlchemy +
+  Flask-Migrate (Alembic), psycopg 3, flask-jwt-extended (one 7-day access token,
+  no refresh token: offline use), Flask-Limiter (login 10/min, register 10/h,
+  per IP, in-memory, so it's per pod), Werkzeug scrypt password hashes.
+  `flask-cors` removed: same origin everywhere (Ingress, compose gateway, Vite proxy).
+- Offline-sync-ready model: UUID PKs the client may choose (create with an
+  existing own ID returns 200 = idempotent retry; someone else's ID -> 409),
+  `updated_at` on every row, soft delete (`deleted_at`). Every lookup goes through
+  owner-checked helpers in `trips.py`; foreign rows are 404.
+- ProxyFix `x_for=1` so rate limits see the client IP behind ingress-nginx.
+  **Week 7 Cloudflare Tunnel adds a hop**: then the client IP is in
+  `CF-Connecting-IP`; revisit ProxyFix/key_func then.
+- Metrics: the exporter's `path` label is now the route template
+  (`/trips/<uuid:trip_id>`) via a function named `path`, so no per-ID series and
+  the existing rules/dashboard still match. Only the duration histogram has `path`.
+- Readiness `/health/ready` now runs `SELECT 1`; liveness stays shallow.
+- Image runs as uid 10001; the chart sets `runAsNonRoot`. `FLASK_APP` set in the image.
+- Tests: 61 pytest (auth, CRUD, validation, metrics label, and `test_isolation.py`
+  covering every ID-taking endpoint). Jenkins "Unit tests" stage: throwaway
+  `postgres:18-alpine` on a per-build Docker network, `flask db upgrade`, then
+  pytest with JUnit XML (needs the JUnit plugin). Passed locally on SQLite, on
+  Postgres, and in a local run of the same commands on python:3.11-slim.
+- Chart: `postgres.yaml` (headless Service + 1-replica StatefulSet,
+  `postgres:18.6-alpine`, PVC 2Gi via volumeClaimTemplates, mounted at
+  `/var/lib/postgresql` per the PG18 image layout), `secret.yaml` (Postgres
+  password + JWT key generated once by Helm, kept via `lookup`, annotated
+  `helm.sh/resource-policy: keep`), `_helpers.tpl` (backend env), backend
+  `migrate` init container (`flask db upgrade` with retries; advisory lock in
+  `migrations/env.py`), alert `TripsyncDatabaseDown`. Server-side dry run against
+  k3s passed.
+- **Deploy order matters**: push devops first (chart; not polled), then backend
+  (its image has the migrations), then frontend. A frontend deploy that runs the
+  new chart with an old backend image fails the init container (atomic rollback).
+- EKS (untested, no cluster up): `aws-ebs-csi-driver` add-on, node role gets
+  `AmazonEBSCSIDriverPolicy` (IRSA/Pod Identity would be stricter), Terraform
+  `gp3` StorageClass (WaitForFirstConsumer, Delete, encrypted); both
+  Jenkinsfiles' EKS branch sets `postgres.storageClassName=gp3`. `terraform
+  validate` passes. Next EKS session: verify the PVC binds, and after destroy
+  verify `aws ec2 describe-volumes` is empty (namespace deletion should delete the
+  PVC, and the CSI driver the volume, before the cluster goes).
+- Compose now has postgres + a one-shot `migrate` service; gateway forwards
+  `X-Forwarded-For`. **Compose tested end to end 2026-10-16** (Docker Desktop is
+  now on the laptop).
+- Frontend: react-router 8 (declarative `BrowserRouter`), pages Login/Trips/Trip,
+  token in localStorage (XSS trade-off noted in `api.js`), every change = one
+  API call + re-fetch of the trip. Up/down reorder buttons, move stop to another
+  day, coordinates pasted as "lat, lng", Google Maps link per stop. Node 20 ->
+  24 in the Dockerfile and the ESLint stage (20 is EOL), Dockerfile uses `npm ci`.
+  Verified with headless Chrome: full flow, light/dark, 390px and desktop, no
+  console errors.
+
+Next: Week 7 offline (service worker, local cache + sync queue using the
+client IDs, Leaflet map for picking coordinates, Cloudflare Tunnel for HTTPS,
+Jest stage); Week 8 export (PDF + Google Maps link), polish, final review.
 
 ## Scope (locked, do not silently re-expand)
 
-Single-user only; no Google Places API (stops entered manually); no full offline
+**Multi-account** (changed from single-user on 2026-10-16, Roye's decision):
+open sign-up, every trip private to its owner, no trip sharing, no email
+verification or password reset (no mail provider). Every query is scoped to the
+logged-in user, with a pytest per endpoint proving user A can't reach user B's
+data (404, not 403, so IDs don't leak). Rate limits on login/sign-up. No Google Places API (stops entered manually); no full offline
 tile prefetch (Workbox opportunistic caching only); export is PDF + Google Maps
 link only (no GPX/KML); Jenkins stays outside Kubernetes by design. GitOps with
 Argo CD is an **optional ~4h stretch sprint** after the core plan (it can be pulled
@@ -192,7 +260,7 @@ Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 
 1. Checkout its own repo, plus this repo (for the chart)
 2. Lint in throwaway containers, in parallel: `helm lint`, flake8 or ESLint
-3. Unit tests (pytest / Jest) — added in Weeks 6 and 7
+3. Unit tests: pytest against a throwaway Postgres (backend, done); Jest (Week 7)
 4. Build the image, tag = short Git SHA of **that app repo**
 5. Push to Docker Hub (`swagarot/tripsync-backend`, `swagarot/tripsync-frontend`)
 6. Deploy: `helm upgrade tripsync k8s-helm/tripsync --atomic
@@ -228,6 +296,11 @@ SCM polling.
 - Cluster: homelab k3s, one control node and two workers. **Traefik is
   disabled**; ingress-nginx is installed via its own Helm chart in namespace
   `ingress-nginx`.
+- The cluster also runs a **Zabbix** stack in `default` (not part of TripSync; its
+  Postgres uses the `nfs-client` StorageClass). Keep it in mind before draining
+  a worker.
+- The laptop's kubectl current context may still be a stale EKS entry; pass
+  `--context default` for k3s.
 - Namespace `tripsync` is owned by **Terraform** (`terraform/k3s`). The chart
   must never create it, and never use `--create-namespace` for TripSync.
 - The Helm release `tripsync` is registered in the **`default`** namespace (first
@@ -244,8 +317,8 @@ SCM polling.
 - When replacing an Ingress with a split pair, delete the old one first, or the
   ingress-nginx admission webhook rejects the duplicate path.
 - Probes: liveness `/health/live` stays shallow (never checks the DB, or a DB
-  outage would cause restart loops); readiness `/health/ready` will check the DB
-  once Postgres exists. Frontend probes hit `/` on nginx.
+  outage would cause restart loops); readiness `/health/ready` checks the DB
+  (`SELECT 1`). Frontend probes hit `/` on nginx.
 - Flask must bind `0.0.0.0` in containers. Frontend nginx needs
   `try_files $uri $uri/ /index.html;`. The frontend calls the relative
   `/api/...` path (same origin through the Ingress, so no CORS in production).
@@ -296,9 +369,9 @@ SCM polling.
   first (which deletes the ELB), then the cluster and VPC. Verified 2026-10-10.
   Afterwards check `aws elb` / `aws elbv2 describe-load-balancers`, NAT gateways
   and EIPs are empty. The app release creates no AWS resources (ClusterIP
-  Services, Ingresses only), so uninstalling it first is optional. **This changes
-  in Week 6:** a Postgres PVC creates an EBS volume (needs the EBS CSI add-on);
-  delete it from inside the cluster before destroy or it keeps billing.
+  Services, Ingresses only), so uninstalling it first is optional. **Since Week 6**
+  the Postgres PVC is an EBS volume (EBS CSI add-on + gp3 class in Terraform);
+  after destroy check `aws ec2 describe-volumes` too, a leftover volume keeps billing.
 - Cost: the control plane, NAT gateway, node and load balancer all bill hourly.
   Never leave EKS running unattended.
 

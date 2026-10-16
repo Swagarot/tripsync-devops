@@ -13,11 +13,42 @@ spec:
       labels:
         app: tripsync-backend
     spec:
+      # The image runs as uid 10001 (see the backend Dockerfile). This makes
+      # Kubernetes refuse to start it if an image ever tries to run as root.
+      securityContext:
+        runAsNonRoot: true
+      # Init containers run to completion before the app container starts.
+      # This one brings the database schema up to date with the code in this
+      # image. If it fails, the new pod never starts, the old pod keeps
+      # serving, and helm --atomic rolls the release back.
+      # Rule for writing migrations: the OLD code must still work on the NEW
+      # schema (it keeps running until the new pod is ready). So add columns as
+      # nullable, and drop old ones only in a later release.
+      # The loop retries while Postgres is still starting (first install).
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 40); do
+                flask db upgrade && exit 0
+                echo "database not ready yet, retrying in 3s"
+                sleep 3
+              done
+              exit 1
+          env:
+            {{- include "tripsync.backendEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
           ports:
             - containerPort: {{ .Values.backend.port }}
+          env:
+            {{- include "tripsync.backendEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           # Probes hit the pod directly (kubelet -> container port), not through
@@ -29,6 +60,9 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
+          # Readiness runs SELECT 1 against Postgres: while the database is
+          # down the pod leaves the Service (requests fail fast at the ingress)
+          # but is not restarted, since a restart can't fix the database.
           readinessProbe:
             httpGet:
               path: /health/ready

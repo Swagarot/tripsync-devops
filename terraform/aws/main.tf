@@ -59,7 +59,23 @@ module "eks" {
       min_size       = 1
       max_size       = 2
       desired_size   = 1
+
+      # The EBS CSI driver (below) creates and attaches EBS volumes, so it
+      # needs EC2 volume permissions. Simplest place: the node role, which the
+      # driver's pods inherit. (The stricter setup is IRSA / Pod Identity, a
+      # role only the driver's service account can use; fine to skip on a
+      # single-app cluster, worth naming in the defense.)
+      iam_role_additional_policies = {
+        ebs_csi = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+      }
     }
+  }
+
+  # Postgres needs a PersistentVolume, and EKS can only make EBS volumes
+  # through this add-on (the old built-in provisioner was removed). The module
+  # installs add-ons after the node group, so the driver's pods can schedule.
+  cluster_addons = {
+    aws-ebs-csi-driver = {}
   }
   tags = {
     Project = "TripSync"

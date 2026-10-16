@@ -1,0 +1,102 @@
+{{- /*
+Postgres: one pod, run as a StatefulSet (not a Deployment) because:
+  - volumeClaimTemplates give the pod its own PersistentVolumeClaim
+    (data-tripsync-postgres-0) that follows it across restarts and reschedules,
+    and outlives `helm uninstall`;
+  - a StatefulSet never runs two copies at once during an update (a Deployment's
+    rolling update would briefly start a second Postgres on the same data).
+Storage: Longhorn on k3s (replicated to both workers, so losing one worker
+doesn't lose the database), gp3 EBS on EKS (set by the Jenkinsfiles).
+No failover: if the pod dies, Kubernetes restarts it (seconds) and the
+backend's readiness probe takes the API out of service meanwhile.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: tripsync-postgres
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: tripsync-postgres
+spec:
+  # Headless (no virtual IP): DNS for tripsync-postgres returns the pod's IP
+  # directly. A StatefulSet needs one as its serviceName; the backend connects
+  # to this name.
+  clusterIP: None
+  selector:
+    app: tripsync-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tripsync-postgres
+  namespace: {{ .Values.namespace }}
+spec:
+  serviceName: tripsync-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tripsync-postgres
+  template:
+    metadata:
+      labels:
+        app: tripsync-postgres
+    spec:
+      # Postgres flushes and shuts down cleanly on SIGTERM; give it time to.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            # Read only when the data directory is empty (first start): the
+            # image then creates this user and database with this password.
+            - name: POSTGRES_USER
+              value: tripsync
+            - name: POSTGRES_DB
+              value: tripsync
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tripsync-secrets
+                  key: postgres-password
+          volumeMounts:
+            # Postgres 18 images keep the data in /var/lib/postgresql/18/docker
+            # and expect the volume one level up, at /var/lib/postgresql. A
+            # bonus: the filesystem's lost+found folder sits beside the data
+            # directory, not inside it, where initdb would refuse to start.
+            - name: data
+              mountPath: /var/lib/postgresql
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          # pg_isready asks the server "are you accepting connections?".
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "tripsync", "-d", "tripsync"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Generous: crash recovery after an unclean stop can take a while,
+          # and restarting Postgres in the middle of it only makes it longer.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "tripsync", "-d", "tripsync"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+  # Note: volumeClaimTemplates can't be changed on an existing StatefulSet.
+  # Growing the disk means resizing the PVC itself (kubectl edit pvc), not
+  # editing these values.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgres.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}
