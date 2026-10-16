@@ -359,6 +359,23 @@ travel times):
   keys). Gunicorn 26 control-socket error fixed (user gets a home dir).
   Ratings: none (no free legitimate source; Google Places has a free monthly cap
   but needs billing + restrictive terms; decided against). 116 pytest, 49 Vitest.
+- Routes round 2 (2026-10-16, after Roye's screenshot of Haneda -> Tokyo Tower as a
+  straight line): ORS said "Could not find routable point within 350 m" (the
+  airport's pin is mid-airfield; OSM even tags Haneda as an island). Fix:
+  `radiuses: 2000` per point. Device route cache key bumped to `v2|` so stored
+  "no route" answers are forgotten.
+- **Public transport** (Roye asked): `tripsync/transit.py`, Transitous
+  (transitous.org, free community MOTIS router over open GTFS, no key; covers
+  Tokyo and Lisbon, verified). One plan per consecutive pair at ~10:00 local
+  (tz guessed from longitude), max/pre/post walk 45 min, best of 3; dates more
+  than 30 days out or past use the next same weekday (timetables are published
+  only weeks ahead; the UI says "times for a typical Wednesday"). Encoded
+  polylines (precision 6) decoded server-side; response adds `parts` (each ride
+  in its GTFS route colour, walks dotted) and `steps` (badges). Line labels:
+  short code if <= 5 chars, else Latin part of the long name, else agency (Toei
+  sends "2966211"). Cached 12 h per pair+date. 124 pytest, 50 Vitest.
+- "Where to?" suggestions keep Photon's relevance order (areas before single
+  places only); sorting by size put the airport (island) above the city.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
