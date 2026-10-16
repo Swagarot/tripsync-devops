@@ -444,6 +444,22 @@ travel times):
   "WebGL2 is required" and the map crashed. BaseMap now checks
   `canvas.getContext("webgl2")` and falls back to OSM raster tiles (local-language
   labels, note in the attribution). Tested with Chrome `--disable-webgl2`.
+- Polish round (2026-10-16; keepsake and EKS postponed by Roye):
+  - Performance, measured: GET /trips/<id> was 40 SQL queries for 5 days x 6 stops
+    (N+1 lazy loads) -> selectinload `FULL_TRIP` = constant (<= 8), regression test
+    `test_trip_page_query_count_does_not_grow_with_the_trip`. nginx had no gzip:
+    main JS 375 kB on the LAN/Tailscale path (Cloudflare already brotli'd the public
+    site) -> gzip on, 87 kB. Route-level code splitting (TripPage 91 kB own chunk,
+    main 376 -> 277 kB). Leaflet divIcons cached by look (they were recreated on
+    every render, so every hover redrew all pins).
+  - Transit: Haneda pin mid-airfield made the fastest-by-duration choice a loop
+    (T3 -> Tenkubashi -> T3) / pointless terminal hop. Now: drop itineraries that
+    revisit a station, score = duration + 7 min per change, ask for 5. Live: direct
+    Keikyu, 62 min, 0 changes. Better still: search "Haneda Airport Terminal 3".
+  - "Find place details" (stop ... menu, only for stops without osm_ref): place
+    search prefilled with the stop's name; picking fills name/category/address/
+    position/photo/hours (rating, own photos, notes kept). For stops typed by hand
+    offline.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage
