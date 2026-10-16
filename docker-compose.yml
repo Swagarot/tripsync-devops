@@ -31,6 +31,9 @@ services:
       POSTGRES_DB: tripsync
       POSTGRES_PASSWORD: local-dev-only
       JWT_SECRET_KEY: local-dev-only-not-a-real-secret-key
+      # Optional: routes/travel times. Taken from your shell, never stored here:
+      #   ORS_API_KEY=... docker compose up   (unset = straight lines only)
+      ORS_API_KEY: ${ORS_API_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

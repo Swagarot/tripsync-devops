@@ -318,8 +318,20 @@ travel times):
   photo, category, hours, website; straight-line distance between stops. Wikimedia
   photos cached by the service worker. Fixed: a change made during a sync's final
   refresh waited for the 30 s retry (flush now loops; test proves it).
-- Next: real routes + travel times via OpenRouteService (free key; Roye to sign
-  up; key in a k8s Secret, calls via the backend with a cache).
+- Routes (backend `5e7f6c8`, frontend `27f5e1d`): `POST /routes {mode, points}` ->
+  OpenRouteService (foot-walking / cycling-regular / driving-car, instructions on
+  only to get per-leg `segments`; steps dropped), geometry flipped to [lat, lng].
+  **This key's quota is 200 directions/day** (X-Ratelimit-Limit header, not the
+  2,000 often quoted). So: backend TTL cache (7 d, points rounded to 5 decimals),
+  frontend keeps every route in IndexedDB by mode+points (`src/trip/routes.js`,
+  422 "no route" remembered, 503/quota not), requests debounced 800 ms after the
+  stops stop changing, and straight-line fallback everywhere. Key: Secret
+  `openrouteservice` (key `api-key`, ns `tripsync`, by hand, Roye 2026-10-16),
+  `ORS_API_KEY` env with `optional: true` (EKS has none -> 503 -> straight lines).
+  Compose takes `ORS_API_KEY` from the shell. Counters
+  `tripsync_routes_upstream_requests_total{outcome}` / `tripsync_routes_cache_total`.
+  Also fixed: "Add to day" waits for place details, so a quick tap no longer
+  saves a stop without photo/hours.
 
 Next: test on a phone (install, offline); Week 8 export
 (PDF + Google Maps link), polish, final review; EKS test of the Week 6 storage

@@ -19,4 +19,14 @@ so the two can't drift apart.
     secretKeyRef:
       name: tripsync-secrets
       key: jwt-secret-key
+# OpenRouteService key for routes/travel times. Created by hand on k3s (not in
+# git): kubectl -n tripsync create secret generic openrouteservice
+# --from-literal=api-key="..."  optional: true = if the Secret doesn't exist
+# (EKS), the pod still starts and the app shows straight lines instead.
+- name: ORS_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: openrouteservice
+      key: api-key
+      optional: true
 {{- end }}
