@@ -6,8 +6,10 @@
 
 ## What this is
 
-Solo Technion DevOps course final project: **TripSync**, a single-user,
-offline-first trip planner (installable PWA) that is genuinely hosted. Owner:
+Solo Technion DevOps course final project: **TripSync**, a multi-account,
+offline-first, map-first trip planner (installable PWA) that is genuinely hosted
+(public via Cloudflare Tunnel on the homelab k3s cluster). Shared trips + expense
+splitting are in scope but not built yet (see Open items). Owner:
 Roye. Teachers approved the custom idea ("broadly it fits") and asked for:
 separate frontend and backend repos, a Jenkinsfile in each app repo (two
 independent pipelines), and this `CLAUDE.md` in the devops repo.
@@ -502,19 +504,43 @@ travel times):
   and at the top of the drawer (before the trip name); Roye couldn't find a way
   back to the trips list (it was only in the drawer's menu).
 
+- Fix round 2026-10-17 (Roye's phone/PC testing; all pushed, deployed by Jenkins):
+  - Long walk/bike routes crossed the sea in a straight line = ORS took a ferry
+    (see "Routes round 3" above): ferries avoided, geometry simplified.
+  - Day travel mode: icon pill (walk/bike/car/transit) instead of a dropdown.
+  - Itinerary: the leg line runs the full height of a transit leg; 8 px gap under
+    the day's separator line (a "Start at" stay pill sat flush and hid it).
+  - Phone bottom sheet: drag zone = handle + header (~90 px, was a 15 px bar);
+    `touch-action: none` there (the browser cancelled drags as scrolls); a touch
+    becomes a drag after 6 px so header buttons still tap; a flick moves one step
+    peek/half/full; the click after a drag is swallowed (it used to re-toggle).
+  - Maps: first swipe after a pinch was ignored (Leaflet drops drags while the
+    pane has `leaflet-zoom-anim`); `L.Map.addInitHook` in components/map.js
+    finishes the zoom animation on a new touch (`_onZoomTransitionEnd`, Leaflet
+    1.9.4 internal, version pinned). Reproduced + verified with CDP touch events.
+  - Trip map minZoom 3 (at 2 the world is narrower than a wide screen; zooming
+    back in made route lines jump).
+  - Longhorn alerts (open item 3, done): see below.
+
+**State at the end of 2026-10-17:** public at https://tripsync.royerandomnonsense.uk;
+backend 157 pytest, frontend 55 Vitest, all green. Weeks 1-7 done; only Week 8
+left by the weekly plan. Roye pausing here; next session = Open items below.
+
 **State at the end of 2026-10-16 (one long session, all built by Claude):**
 deployed on k3s and public at https://tripsync.royerandomnonsense.uk; backend
 155 pytest, frontend 55 Vitest, all green; backups verified by a real restore.
 Roye tested offline add + sync on his phone (works) and the UI on a 2000 px
 screen (feedback addressed above).
 
-**Open items, roughly in order:**
+**Open items (updated 2026-10-17). Suggested order: 2 (collab + splitting) while
+the app is fresh, then 5 (Week 8 features), then 6 (EKS), with 1 (walkthrough)
+and the doc/PowerPoint once features stop changing (from "Explained" below):**
 1. **Walkthrough for Roye** of everything marked "explanation pending" above
    (he must defend it). This is now the biggest risk, more than any feature.
 2. **Build collaborative trips + expense splitting (IN SCOPE since 2026-10-16),**
-   see "Collaborative trips" below.
-3. **Mitigate the Longhorn single point of failure (IN SCOPE, Roye 2026-10-16;
-   approach not chosen yet).** What actually fails today: (a) shared fate: Postgres,
+   see "Collaborative trips" below. Not started.
+3. **Mitigate the Longhorn single point of failure (DONE for now, 2026-10-17:
+   alerts only).** What actually fails today: (a) shared fate: Postgres,
    Garage, Prometheus and Loki all sit on Longhorn, so a Longhorn bug / bad upgrade /
    mistake in longhorn-system hits all of them, replicas included; (b) only 2 storage
    nodes: after losing a worker every volume has ONE copy until it returns; (c) the
@@ -616,7 +642,7 @@ restart). Garage readiness is a TCP check: /health is 503 until it's set up, and
 setup goes through its Service -> deadlock otherwise.
 
 **CI tests.** Backend: pytest against a throwaway Postgres on a per-build Docker
-network, migrations first (real production schema); 155 tests incl. isolation
+network, migrations first (real production schema); 157 tests incl. isolation
 tests (Bob calls every ID-taking endpoint on Alice's data -> 404) and a
 query-count test (N+1 guard). Frontend: 55 Vitest tests on logic (offline queue,
 conflicts, routes, weather rules, currency). Q: why 404 not 403? A: 403 confirms
