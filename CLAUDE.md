@@ -364,6 +364,15 @@ travel times):
   airport's pin is mid-airfield; OSM even tags Haneda as an island). Fix:
   `radiuses: 2000` per point. Device route cache key bumped to `v2|` so stored
   "no route" answers are forgotten.
+- Routes round 3 (2026-10-17, Roye: long bike/walk routes cross the sea in a
+  straight line): ORS picked the Tokyo->Kyushu overnight ferry, stored in OSM as
+  ONE segment (verified with waycategory extra_info; driving didn't use it). Fix:
+  `avoid_features: ["ferries"]`, retry with ferries only on 404 (islands; costs a
+  2nd request). Long routes were also huge (35k points / ~700 kB for Tokyo ->
+  Kumamoto on foot; x2000 cache entries = memory risk), so the backend simplifies
+  the line (Douglas-Peucker, ~5 m; `snapped` read from the full line first).
+  Device cache key `v5|`. Day travel mode is now an icon pill (walk/bike/car/
+  transit) instead of a dropdown. 157 pytest.
 - **Public transport** (Roye asked): `tripsync/transit.py`, Transitous
   (transitous.org, free community MOTIS router over open GTFS, no key; covers
   Tokyo and Lisbon, verified). One plan per consecutive pair at ~10:00 local
