@@ -9,7 +9,12 @@ resource "helm_release" "kube_prometheus_stack" {
   namespace        = "monitoring"
   create_namespace = true
 
-  values = [file("${path.module}/../../monitoring/kube-prometheus-stack.yaml")]
+  # Later files add to earlier ones: the Longhorn scrape, NetworkPolicy and
+  # alerts are kept in their own file.
+  values = [
+    file("${path.module}/../../monitoring/kube-prometheus-stack.yaml"),
+    file("${path.module}/../../monitoring/longhorn-monitoring.yaml"),
+  ]
 
   wait    = true
   timeout = 900

@@ -1,0 +1,123 @@
+# Watching Longhorn itself: extra kube-prometheus-stack values, layered on top
+# of kube-prometheus-stack.yaml (terraform/k3s/monitoring.tf passes both).
+#
+# Why: Longhorn keeps 2 copies of every volume (Postgres, Garage photos,
+# Prometheus, Loki), but nothing told us when one copy was gone. After a worker
+# dies or a disk fails, every volume runs on ONE copy until Longhorn rebuilds
+# the second; if that doesn't happen, the next failure loses data. These alerts
+# make that window visible (Discord, like the other alerts).
+
+prometheus:
+  # Scrape every longhorn-manager pod (one per worker; each reports the
+  # volumes, node and disk on its own worker) through the longhorn-backend
+  # Service, port "manager" (9500).
+  additionalServiceMonitors:
+    - name: longhorn
+      selector:
+        matchLabels:
+          app: longhorn-manager
+      namespaceSelector:
+        matchNames: [longhorn-system]
+      endpoints:
+        - port: manager
+          interval: 30s
+
+# Longhorn 1.12 ships NetworkPolicies that only let Longhorn's own pods talk to
+# longhorn-manager (restrictInternalTraffic), so Prometheus was refused. Policies
+# add up: this one also lets Prometheus (and only Prometheus) in, only on 9500.
+extraManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: longhorn-manager-allow-prometheus
+      namespace: longhorn-system
+    spec:
+      podSelector:
+        matchLabels:
+          app: longhorn-manager
+      policyTypes: [Ingress]
+      ingress:
+        - from:
+            # Same list item = both must match: Prometheus pods in "monitoring".
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - port: 9500
+              protocol: TCP
+
+additionalPrometheusRulesMap:
+  longhorn:
+    groups:
+      - name: longhorn
+        rules:
+          # One copy left. Normal for a few minutes after a node restarts
+          # (Longhorn copies the data back), so only alert if it lasts.
+          - alert: LonghornVolumeDegraded
+            expr: longhorn_volume_robustness{state="degraded"} == 1
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Longhorn volume {{ $labels.pvc }} has only one copy"
+              description: >-
+                {{ $labels.pvc_namespace }}/{{ $labels.pvc }} has been running on a
+                single replica for 15 minutes. Another disk or node failure would
+                lose its data. Check that both workers are up and the Longhorn UI
+                shows the replica rebuilding.
+
+          # No usable copy: the app using it (e.g. Postgres) is down.
+          - alert: LonghornVolumeFaulted
+            expr: longhorn_volume_robustness{state="faulted"} == 1
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Longhorn volume {{ $labels.pvc }} has no working copy"
+              description: >-
+                {{ $labels.pvc_namespace }}/{{ $labels.pvc }} is faulted: the pod
+                using it can't read or write. Restore from the nightly backup if
+                Longhorn can't salvage a replica (docs/backup-restore.md).
+
+          # A worker Longhorn can't use (disk missing, iSCSI broken, multipathd
+          # back...): new replicas can't be placed there.
+          - alert: LonghornNodeNotReady
+            expr: longhorn_node_status{condition=~"ready|schedulable"} == 0
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Longhorn can't use {{ $labels.node }} ({{ $labels.condition }})"
+              description: >-
+                Longhorn reports {{ $labels.node }} as not {{ $labels.condition }}
+                ({{ $labels.condition_reason }}). Volumes can't keep a copy there.
+
+          # Longhorn stops putting new replicas on a disk under 25% free; warn
+          # before that.
+          - alert: LonghornDiskFilling
+            expr: longhorn_disk_usage_bytes / longhorn_disk_capacity_bytes > 0.7
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Longhorn disk on {{ $labels.node }} is {{ $value | humanizePercentage }} full"
+              description: >-
+                At 75% Longhorn stops scheduling replicas on this disk, and
+                volumes that lose a copy can't rebuild it.
+
+          # If Prometheus can't see Longhorn at all, every alert above stays
+          # silent: say so instead of looking healthy.
+          - alert: LonghornMetricsMissing
+            expr: absent(longhorn_volume_robustness)
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "No Longhorn metrics for 15 minutes"
+              description: >-
+                Prometheus gets nothing from longhorn-manager, so the Longhorn
+                alerts can't fire. Check the longhorn-manager pods and the
+                longhorn-manager-allow-prometheus NetworkPolicy.

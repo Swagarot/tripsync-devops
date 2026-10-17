@@ -527,7 +527,21 @@ screen (feedback addressed above).
       e.g. CloudNativePG) - medium/large, strongest answer;
    D) a third storage node / 3-node Garage - needs hardware or the control node;
    E) offsite copy (Cloudflare R2, 10 GB free) - small, needs a payment method.
-   Claude's suggestion: A + B as the scope, C as stretch.
+   DECIDED 2026-10-17 (Roye): B only for now. Rationale: replicas protect against
+   hardware loss, backups against mistakes (a DELETE or bad migration hits both
+   replicas instantly); Postgres + photos already have the nightly NFS backup
+   outside Longhorn, so A would only make restores faster. **B is DONE:**
+   `monitoring/longhorn-monitoring.yaml` (extra kube-prometheus-stack values, passed
+   by `terraform/k3s/monitoring.tf`): ServiceMonitor for longhorn-manager (9500),
+   a NetworkPolicy letting only Prometheus in (Longhorn 1.12's own policies,
+   `restrictInternalTraffic`, refused it), and alerts LonghornVolumeDegraded (one
+   copy, 15m), LonghornVolumeFaulted (critical), LonghornNodeNotReady,
+   LonghornDiskFilling (>70%; Longhorn stops scheduling at 75%),
+   LonghornMetricsMissing (absent -> the others would stay silent). Verified
+   live: both managers up, 5 volumes healthy, rules loaded. Not fire-tested.
+   Metrics note: in 1.12 `longhorn_volume_robustness` is one series per `state`
+   label (value 1 = current state), and each manager reports only its own
+   node's volumes. C (Postgres replication) and E (offsite) remain options.
 4. Trip keepsake: single downloadable HTML file (Roye: later).
 5. Week 8: PDF export + Google Maps link, polish, final review.
 6. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
@@ -615,6 +629,17 @@ install. 2 replicas on different workers. Behind the tunnel all requests come
 from cloudflared pods, so rate limits use CF-Connecting-IP (set by Cloudflare,
 not forgeable through it).
 
+**Longhorn (storage).** Software on every node that turns the workers' disks
+into Kubernetes volumes. Each volume = a virtual disk with a full copy (replica)
+on both workers; an engine next to the pod writes every block to both before
+confirming, so the copies are identical (iSCSI underneath: why open-iscsi, and
+why multipathd had to go). Worker dies -> pod restarts on the other worker,
+attaches the surviving copy, Longhorn rebuilds the 2nd copy when the node returns.
+Replica != backup: replicas protect against a dead disk/node; a mistake (DELETE,
+bad migration, Longhorn bug) hits both copies at once, which only a backup undoes.
+Weak spots: one piece of software holds both copies; while a worker is down,
+everything has one copy -> alerts for exactly that (see Monitoring additions).
+
 **Photo storage and backups.** Object storage, the DB keeps only a row per photo
 (big, write-once, never queried; keeps DB and its backups small; same S3 API as
 AWS). Garage because MinIO's free images were pulled in 2025. storage-init
@@ -626,7 +651,7 @@ restoring into a scratch DB (counts matched); TripsyncBackupMissing alert (>26 h
 Gap: NFS is in the same building.
 
 **Monitoring additions.** Alerts: database down, photo storage down, backup
-missing (+ Week 5's backend/frontend down, error rate, slow). Metrics labelled by
+missing, Longhorn volume down to one copy / no copy, Longhorn disk filling (+ Week 5's backend/frontend down, error rate, slow). Metrics labelled by
 route template (/trips/<uuid:trip_id>) not the URL, else every trip ID is a new
 time series forever (high cardinality). Counters for outside-API calls vs cache
 hits.
