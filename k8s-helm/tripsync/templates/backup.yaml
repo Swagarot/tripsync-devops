@@ -108,8 +108,15 @@ spec:
                   rclone sync garage:tripsync-photos /backups/photos/current \
                     --backup-dir /backups/photos/deleted/$today --stats-one-line -v
                   # Only once something was ever deleted (else rclone logs errors).
+                  # Two steps: delete files older than 30 days, then remove the
+                  # folders left empty. `delete --rmdirs` did both but FAILED the
+                  # job whenever a folder still held younger photos ("directory
+                  # not empty"): every nightly run from 2026-10-17 to 10-28 was
+                  # marked failed (the dumps were fine). rmdirs skips non-empty
+                  # folders instead of erroring.
                   if [ -d /backups/photos/deleted ]; then
-                    rclone delete /backups/photos/deleted --min-age 30d --rmdirs
+                    rclone delete /backups/photos/deleted --min-age 30d
+                    rclone rmdirs /backups/photos/deleted --leave-root
                   fi
                   {{- end }}
                   {
