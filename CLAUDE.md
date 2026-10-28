@@ -8,8 +8,9 @@
 
 Solo Technion DevOps course final project: **TripSync**, a multi-account,
 offline-first, map-first trip planner (installable PWA) that is genuinely hosted
-(public via Cloudflare Tunnel on the homelab k3s cluster). Shared trips + expense
-splitting are in scope but not built yet (see Open items). Owner:
+(public via Cloudflare Tunnel on the homelab k3s cluster). Trips can be shared
+(owner / editor / viewer, invite links) with expense splitting, and exported as
+a PDF or a one-file keepsake (built 2026-10-28). Owner:
 Roye. Teachers approved the custom idea ("broadly it fits") and asked for:
 separate frontend and backend repos, a Jenkinsfile in each app repo (two
 independent pipelines), and this `CLAUDE.md` in the devops repo.
@@ -522,6 +523,126 @@ travel times):
     back in made route lines jump).
   - Longhorn alerts (open item 3, done): see below.
 
+**Sprint 2026-10-28 (Roye: "finish everything"; all built by Claude, explanation
+pending; all pushed and deployed on k3s by Jenkins):**
+- **Shared trips** (backend `c2b93ad`, frontend `79ee1ad`). Decisions (Roye):
+  editors change everything except the trip's name; only the owner renames,
+  deletes, invites, changes roles, removes people; invite links are per role
+  and expire after 7 days. Backend:
+  - `trip_members(trip_id, user_id, role)` (editor|viewer); the owner stays
+    `trips.user_id`. Migration `9b1c4e7a2d3f` (expand-only: new table,
+    `trips.invite_version` default 0, `expenses.paid_by` FK SET NULL,
+    `expenses.split_between` JSON). Verified upgrade/downgrade/upgrade on PG 18.
+  - `tripsync/access.py`: `visible_trips()` (SQL: owner OR member) replaces
+    `Trip.user_id == me` in every finder (trips/extras/photos); `owned(find, id,
+    need=EDITOR)` then `require(trip_of(row), need)`. Not on the trip = 404 (as
+    before, IDs don't leak); on it with too low a role = 403 with a message.
+    `members_of(trip)` (owner first) is in GET /trips/<id> with `role`; GET
+    /trips includes shared trips with `role` + `owner_email`.
+  - `tripsync/sharing.py`: invite = itsdangerous `URLSafeTimedSerializer`
+    (JWT key, salt "trip-invite") over {trip, role, invite_version}, max_age 7 d;
+    `POST /trips/<id>/invites/reset` bumps invite_version = cancels all links.
+    `GET /invites/<t>` preview, `POST /invites/<t>/accept` (never downgrades),
+    `PATCH/DELETE /trips/<id>/members/<user>` (owner; DELETE yourself = leave;
+    the owner can't "leave").
+  - Query-count test limit 8 -> 10 (role + member list), still constant.
+  - `tests/test_sharing.py` (62): role matrix (viewer gets 403 on every write
+    endpoint of test_isolation's list), outsiders 404 on every endpoint incl.
+    the sharing ones, removed member loses access at once, invite tampering /
+    expiry (time.time monkeypatched) / cancel / deleted trip, split validation.
+    `alices_data` fixture moved to conftest.py.
+  Frontend:
+  - `src/trip/SharePanel.jsx` ("Share & export" button in the drawer header):
+    members, roles, remove, create/copy/cancel links, leave. Direct API calls,
+    not offline ops (an invite only exists once the server has it).
+  - `src/pages/JoinPage.jsx` at /join/<token>: preview, joins on a button press;
+    RequireLogin passes `state.from` so login returns to the invite.
+  - Viewers: drawer content wrapped in `<fieldset disabled>`; add/more links
+    hidden by CSS; no quick-add (PlaceSearch `onAdd` null hides Add); no Edit.
+    Backstop in `store.dispatch`: a viewer's op is never queued.
+  - Editors: TripForm `nameLocked`; Delete trip only for the owner.
+  - Polling: shared trips refresh every 20 s while visible + online (pending
+    ops re-apply on top, so nothing typed is lost; last write wins per field).
+  - Trip cards: "Shared by <name> · can edit / view only".
+- **Expense splitting:** expenses store `paid_by` + `split_between` (null =
+  everyone); `src/trip/split.js` computes balances in whole cents of the home
+  currency (leftover cents one each to the first people by user id, so all
+  devices agree), skips unpaid/unconvertible ones, and `settleUp` = greedy
+  biggest debtor -> biggest creditor (<= people-1 payments). ExpensesTab:
+  "Paid by" + "Split between" on shared trips, "who paid?" picker for old
+  expenses, Balances + "To settle up". `src/trip/people.js` names people
+  ("You", else the email's local part; no display names exist).
+- **Week 8 export** (frontend `ae4c22e`): `src/trip/TripDocument.jsx` + its own
+  paper stylesheet `trip-document.css` (no app CSS/theme dependence).
+  - PDF = `/trips/<id>/print` + the browser's print dialog ("Save as PDF"): no
+    PDF library, no server work, works offline. Verified with Chrome's PDF
+    engine (page.pdf) and print-media screenshots.
+  - Keepsake = the same document rendered with `renderToStaticMarkup` into ONE
+    .html file: CSS inline, every photo embedded as a data: URL, a tile-free SVG
+    sketch map (`sketchMap()` in `src/trip/export.js`, Web Mercator + fit, day
+    lines, numbered pins, H for stays). Builder `keepsake.js` is lazy-loaded
+    (React's server renderer ~200 kB). Verified: opened with the network
+    blocked, 0 broken images.
+  - "Open in Google Maps" per day: documented Maps URLs (`/maps/dir/?api=1`,
+    origin / waypoints / destination from `dayPoints` incl. the stay, the day's
+    travelmode, max 9 waypoints). Unit-tested.
+  - Backend `47501f9`: `GET /places/photo?url=` fetches Wikimedia photos for the
+    keepsake (Commons `Special:FilePath` redirects twice without CORS headers,
+    so the browser can't read the bytes). Not an open proxy (SSRF): only links
+    starting with our Commons prefix, redirects followed manually and only to
+    https *.wikimedia.org, image content-type only, max 5 MB, login + rate
+    limit. Tests include 169.254.169.254 and an off-site redirect.
+- **Backup incident (found 2026-10-28):** every nightly backup since 2026-10-17
+  was marked FAILED. Cause: `rclone delete --min-age 30d --rmdirs` exits 1 when
+  a deleted/<day> folder still holds photos younger than 30 days ("directory
+  not empty") - first true the night after the first photo deletion. The
+  database dumps and the photo mirror had still been written every night (the
+  failure was the last cleanup step). Fix (devops `ca7b3f7`): `rclone delete
+  --min-age 30d` then `rclone rmdirs --leave-root` (skips non-empty folders).
+  Reproduced old (exit 1) vs new (exit 0) with the rclone image; a manual Job
+  from the CronJob then completed. **Monitoring worked:** TripsyncBackupMissing
+  fired from 2026-10-17 17:53 and KubeJobFailed nightly; Alertmanager sent 60
+  Discord notifications, 0 failed, no silences - the alerts were sent but
+  nobody acted on them. Lesson for the slides: alerts only help if someone
+  reads the channel.
+- **Terraform** (devops `7ad0ddb`): both backends `use_lockfile = true` (S3
+  native locking, Terraform >= 1.10) instead of the deprecated `dynamodb_table`;
+  re-initialised; proven with two concurrent plans (second: S3 412 Precondition
+  Failed = lock held). The DynamoDB table `tripsync-tfstate-lock` is now unused
+  (made by hand, not in Terraform; delete it when convenient).
+  `terraform/k3s` gained `var.kubeconfig` (default ~/.kube/config).
+- **Laptop kubeconfig was replaced** (by 2026-10-20) with another course's
+  (`student07` / "workshop"); the k3s `default` context survives only in
+  `~/.kube/config.bak`. Use `kubectl --kubeconfig ~/.kube/config.bak --context
+  default` and `terraform ... -var kubeconfig=$HOME/.kube/config.bak`. Not
+  touched (it's Roye's to decide). k3s plan shows one harmless drift: the
+  `kubectl.kubernetes.io/restartedAt` annotation on cloudflared.
+- Jenkins quirk (frontend job builds on devops commits): both Jenkinsfiles are
+  identical (`checkout scm` + devops `git` step with `poll: false`), so the
+  cause is in the Jenkins job config, not the code; still needs a look at that
+  job's Polling Log in the Jenkins UI (Claude has no Jenkins access).
+- Tests now: backend 225 pytest (sharing suite also run on Postgres 18), frontend 66 Vitest.
+- **EKS retest (2026-10-28):** `terraform apply` 57 resources (Week 4's 54 + EBS
+  CSI add-on, its IAM policy, gp3 StorageClass), ~20 min. Chart deployed with the
+  Jenkinsfile's EKS-branch command run from the laptop (`helm upgrade --install
+  ... -n tripsync --set postgres.storageClassName=gp3 --atomic`, both live SHAs;
+  Claude can't press "Build with Parameters" in Jenkins; the Jenkins -> EKS path
+  itself was proven in Week 4): installed in 38 s on the first try. Postgres +
+  Garage PVCs bound on encrypted gp3 EBS; all 7 migrations ran on the empty DB
+  up to 9b1c4e7a2d3f; storage-init bootstrapped Garage from scratch; backup PVC +
+  CronJob correctly NOT rendered (no nfs-client). Smoke test through the ELB
+  (scratchpad `eks_smoke.py`): health, frontend, trip/day/stop, invite + join,
+  split expense, photo upload into Garage + signed link, outsider 404 - all
+  passed. Teardown: `helm uninstall`, then delete the PVCs and wait until the
+  PVs (and so the EBS volumes) are gone - verified with `aws ec2
+  describe-volumes` (NotFound) - and only then `terraform destroy`, so no
+  orphaned billed disks. Destroy: 57 destroyed; afterwards AWS verified empty
+  (0 volumes, 0 load balancers, 0 non-default VPCs, 0 EIPs, 0 instances).
+- E2E (Playwright, local compose): 3 users - invite while logged out -> login ->
+  join -> trip; split expense and balances on both sides; viewer read-only on a
+  phone; removal = immediate 404; export: Maps link, print page, PDF, keepsake
+  offline. Screenshots checked.
+
 **State at the end of 2026-10-17:** public at https://tripsync.royerandomnonsense.uk;
 backend 157 pytest, frontend 55 Vitest, all green. Weeks 1-7 done; only Week 8
 left by the weekly plan. Roye pausing here; next session = Open items below.
@@ -532,13 +653,11 @@ deployed on k3s and public at https://tripsync.royerandomnonsense.uk; backend
 Roye tested offline add + sync on his phone (works) and the UI on a 2000 px
 screen (feedback addressed above).
 
-**Open items (updated 2026-10-17). Suggested order: 2 (collab + splitting) while
-the app is fresh, then 5 (Week 8 features), then 6 (EKS), with 1 (walkthrough)
-and the doc/PowerPoint once features stop changing (from "Explained" below):**
+**Open items (updated 2026-10-28; features are complete):**
 1. **Walkthrough for Roye** of everything marked "explanation pending" above
-   (he must defend it). This is now the biggest risk, more than any feature.
-2. **Build collaborative trips + expense splitting (IN SCOPE since 2026-10-16),**
-   see "Collaborative trips" below. Not started.
+   (he must defend it), then the final document + PowerPoint from "Explained".
+   This is now THE remaining work.
+2. ~~Collaborative trips + expense splitting~~: DONE 2026-10-28 (see Sprint).
 3. **Mitigate the Longhorn single point of failure (DONE for now, 2026-10-17:
    alerts only).** What actually fails today: (a) shared fate: Postgres,
    Garage, Prometheus and Loki all sit on Longhorn, so a Longhorn bug / bad upgrade /
@@ -568,18 +687,20 @@ and the doc/PowerPoint once features stop changing (from "Explained" below):**
    Metrics note: in 1.12 `longhorn_volume_robustness` is one series per `state`
    label (value 1 = current state), and each manager reports only its own
    node's volumes. C (Postgres replication) and E (offsite) remain options.
-4. Trip keepsake: single downloadable HTML file (Roye: later).
-5. Week 8: PDF export + Google Maps link, polish, final review.
-6. EKS session: gp3/EBS CSI for Postgres + Garage, transit/ORS key (optional
-   Secret there), backups (no nfs-client on EKS -> backup job not rendered),
-   check `aws ec2 describe-volumes` after destroy.
+4. ~~Trip keepsake~~: DONE 2026-10-28.
+5. ~~Week 8 PDF export + Google Maps link~~: DONE 2026-10-28. Final review:
+   with the walkthrough.
+6. ~~EKS session~~: DONE 2026-10-28 (see Sprint). Not tested there: routes
+   (no ORS Secret on EKS -> straight lines, by design) and Jenkins with
+   TARGET=eks (proven in Week 4).
 7. Jenkins: the frontend job also builds on tripsync-devops commits despite
-   `poll: false` (Roye didn't trigger builds by hand); check that job's
-   Polling Log / SCM config.
-8. Small: `dynamodb_table` -> `use_lockfile` in terraform/aws backend; offsite
-   backup (R2) would close the same-building gap.
+   `poll: false`; the Jenkinsfiles are identical, so check that JOB's Polling
+   Log / SCM config in the Jenkins UI (needs Roye).
+8. ~~`use_lockfile`~~ DONE 2026-10-28. Left: delete the unused DynamoDB lock
+   table; optional offsite backup (R2) for the same-building gap; decide what
+   to do with the replaced laptop kubeconfig.
 
-**Collaborative trips (IN SCOPE, Roye 2026-10-16; not built yet).** Plan: `trip_members(trip_id, user_id, role owner|editor|
+**Collaborative trips (BUILT 2026-10-28, see Sprint; original plan kept):** Plan: `trip_members(trip_id, user_id, role owner|editor|
 viewer)`, invite by link (signed token, no email provider), every owner check
 in trips.py / extras.py / photos.py goes through one "is member with role"
 helper (they're already centralised: find_trip/find_day/find_stop/find_child/
@@ -588,7 +709,7 @@ shared trips, other people's changes picked up by polling (or SSE later),
 last-write-wins per field (ops are field-level PATCHes; reorder conflicts are
 already refused + refreshed). Estimated about a day. Out of scope: live
 co-editing (websockets/cursors).
-**Expense splitting (IN SCOPE, Roye 2026-10-16; not built yet):** each expense
+**Expense splitting (BUILT 2026-10-28):** each expense
 stores only facts: `paid_by` (a member) and `split_between` (members, default
 everyone). Balances ("who owes whom") are computed when shown, never stored, so
 edits/deletes can't leave them stale. Equal split; the leftover cent goes to one
@@ -642,9 +763,9 @@ restart). Garage readiness is a TCP check: /health is 503 until it's set up, and
 setup goes through its Service -> deadlock otherwise.
 
 **CI tests.** Backend: pytest against a throwaway Postgres on a per-build Docker
-network, migrations first (real production schema); 157 tests incl. isolation
+network, migrations first (real production schema); 225 tests incl. isolation
 tests (Bob calls every ID-taking endpoint on Alice's data -> 404) and a
-query-count test (N+1 guard). Frontend: 55 Vitest tests on logic (offline queue,
+query-count test (N+1 guard). Frontend: 66 Vitest tests on logic (offline queue,
 conflicts, routes, weather rules, currency). Q: why 404 not 403? A: 403 confirms
 the ID exists.
 
@@ -690,6 +811,44 @@ kB) -> gzip 87 kB. Code splitting: the big map library loads only on the trip pa
 offline); same timing for unknown email vs wrong password; rate limits on login,
 sign-up, search, uploads; photos re-encoded (GPS stripped) and served by signed,
 expiring URLs (an <img> can't send the token); non-root containers.
+
+**Sharing and access control.** Before sharing, every lookup filtered on
+"owner = me". Now one module (`access.py`) answers "can this user see this
+trip?" (owner or member) and "is their role enough for this action?". Two
+answers on purpose: not on the trip = 404 (same as a non-existent ID, so IDs
+don't leak); on it but a viewer trying to edit = 403 (they know it exists; a
+clear "you can only view" is more useful). Invite links are signed tokens, not
+database rows: the server signs {trip, role, version} with its secret key plus
+a timestamp, so nobody can forge or change one, it expires by itself after 7
+days, and "cancel all links" just bumps the version. Proof: a test runs every
+write endpoint as a viewer (all 403) and every endpoint as an outsider (all
+404). Q: why not live editing? A: polling every 20 s is enough for trip
+planning and needs no websockets through the tunnel; conflicts = last write wins
+per field.
+
+**Splitting expenses.** The database stores only facts (who paid, who shares);
+who-owes-whom is computed whenever it's shown, so it can never be stale. Money
+in whole cents: 10.00 / 3 = 3.34 + 3.33 + 3.33, leftover cents in a fixed order
+so every device shows the same. "Settle up" = biggest debtor pays biggest
+creditor until everyone is even (at most people-1 payments).
+
+**Export: PDF, keepsake, Google Maps.** PDF = a printable page + the browser's
+own "Save as PDF": no PDF library, nothing on the server, works offline. The
+keepsake is the same page saved as one HTML file with the styles and photos
+inside (base64 data URLs) and a drawn SVG map instead of map tiles, so it opens
+anywhere, offline, forever. Wikimedia photos come through a small backend
+endpoint (browser CORS rules block reading them directly); it is locked to
+Wikimedia so it can't be abused to make our server fetch arbitrary URLs (SSRF).
+
+**The backup incident (a good story for the slides).** Every nightly backup
+from Oct 17 to Oct 28 was marked failed: the cleanup of old deleted photos
+returned an error when a folder still had recent photos in it. The data itself
+was being backed up (dumps + photo mirror were written); only the final step
+failed. Monitoring caught it the same day (TripsyncBackupMissing + Kubernetes'
+KubeJobFailed, 60 Discord messages delivered), but nobody read them for 11 days.
+Fixed, reproduced locally with the same rclone image, verified with a manual
+run. Lessons: test the cleanup path, not just the happy path; an alert needs an
+owner who reads it.
 
 **The app (brief).** Offline-first: every edit is a small "op", applied on screen
 at once, saved in IndexedDB, sent in order when online; IDs made on the device (so
