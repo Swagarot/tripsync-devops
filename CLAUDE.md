@@ -654,9 +654,19 @@ Roye tested offline add + sync on his phone (works) and the UI on a 2000 px
 screen (feedback addressed above).
 
 **Open items (updated 2026-10-28; features are complete):**
+**Order decided by Roye 2026-10-28:** (a) UI polish -> (b) walkthrough ->
+(c) ArgoCD (maybe) -> (d) final document + PowerPoint.
+0. **UI polish pass (next session, Claude).** Go over every screen on desktop and
+   phone (trips list, trip page tabs, share panel, join page, print page,
+   login) for spacing, alignment, empty/loading states, consistency of buttons
+   and icons, dark mode. Screenshot before/after; keep all tests green.
+0b. **ArgoCD (after the walkthrough, before the docs; optional).** GitOps: an
+   Argo CD Application watching `k8s-helm/tripsync` in tripsync-devops, so Jenkins
+   only builds/pushes images and bumps the image tag in git instead of running
+   `helm upgrade`. Decide first whether it replaces Jenkins' deploy stage or
+   only runs alongside it, and keep the EKS path working.
 1. **Walkthrough for Roye** of everything marked "explanation pending" above
    (he must defend it), then the final document + PowerPoint from "Explained".
-   This is now THE remaining work.
 2. ~~Collaborative trips + expense splitting~~: DONE 2026-10-28 (see Sprint).
 3. **Mitigate the Longhorn single point of failure (DONE for now, 2026-10-17:
    alerts only).** What actually fails today: (a) shared fate: Postgres,
