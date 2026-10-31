@@ -15,10 +15,11 @@ so this protects against losing the cluster (disks, Longhorn, a bad deploy,
 a wrong delete), not against losing the building. Restore steps:
 docs/backup-restore.md in this repo.
 
-Only rendered where the nfs-client StorageClass exists (the homelab k3s). EKS
-has none and gets no backup job.
+Only rendered when backup.enabled is true: values-k3s.yaml (the homelab, which
+has the nfs-client StorageClass) turns it on. EKS has no NFS server and keeps
+the default, off.
 */ -}}
-{{- if and .Values.backup.enabled (lookup "storage.k8s.io/v1" "StorageClass" "" .Values.backup.storageClassName) }}
+{{- if .Values.backup.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -27,6 +28,9 @@ metadata:
   annotations:
     # helm uninstall leaves the backups alone (like the database volume).
     helm.sh/resource-policy: keep
+    # The same for Argo CD: never pruned or deleted, even if it disappears
+    # from git or the Application is deleted.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
   accessModes: ["ReadWriteOnce"]
   storageClassName: {{ .Values.backup.storageClassName }}

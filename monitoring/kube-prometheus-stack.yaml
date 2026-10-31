@@ -126,22 +126,17 @@ grafana:
   resources:
     requests: { cpu: 50m, memory: 256Mi }
     limits: { memory: 768Mi }
-  # Served under /grafana on the same ingress-nginx as the app (no hostname,
-  # like the tripsync Ingresses). Grafana must know its sub-path to build links.
-  grafana.ini:
-    server:
-      root_url: "%(protocol)s://%(domain)s/grafana/"
-      serve_from_sub_path: true
+  # Private: a NodePort, reachable on the nodes' LAN and Tailscale addresses
+  # (http://<control node Tailscale IP>:30300) but not through the Cloudflare
+  # Tunnel, which only forwards to ingress-nginx. It used to be an Ingress at
+  # /grafana with no hostname, which matched the public hostname too: the login
+  # page was on the internet (found and closed 2026-10-31). Argo CD's UI is
+  # private the same way (port 30443).
   ingress:
-    enabled: true
-    ingressClassName: nginx
-    hosts: []
-    path: /grafana
-    pathType: Prefix
-  # The sub-path applies to Grafana's own metrics too: /metrics redirects to
-  # /grafana/metrics, so Prometheus must scrape that path directly.
-  serviceMonitor:
-    path: /grafana/metrics
+    enabled: false
+  service:
+    type: NodePort
+    nodePort: 30300
   # Prometheus and Alertmanager datasources come from the chart; Loki is added
   # here (installed by terraform/k3s/logging.tf). Config-as-code, like the rest.
   additionalDataSources:

@@ -1,0 +1,51 @@
+# The Argo CD Application for TripSync: values for the argocd-apps chart,
+# installed by terraform/k3s/argocd.tf after Argo CD itself.
+#
+# Source: the chart in this repo, with values.yaml + values-k3s.yaml.
+# Destination: the same cluster, namespace tripsync.
+applications:
+  tripsync:
+    namespace: argocd
+    project: default
+    # No resources-finalizer on purpose: deleting this Application leaves the
+    # app running (Postgres, photos...) instead of deleting everything it made.
+    source:
+      repoURL: git@github.com:Swagarot/tripsync-devops.git
+      targetRevision: main
+      path: k8s-helm/tripsync
+      helm:
+        # Same name as the old Helm release, so the rendered objects are
+        # identical and Argo CD took the running ones over as they were.
+        releaseName: tripsync
+        valueFiles:
+          - values.yaml
+          - values-k3s.yaml
+    destination:
+      server: https://kubernetes.default.svc
+      namespace: tripsync
+    syncPolicy:
+      # Sync on its own when git changes; selfHeal also undoes manual
+      # kubectl edits; prune deletes what was removed from git (except the
+      # Secret and the backup volume, which carry Prune=false).
+      automated:
+        prune: true
+        selfHeal: true
+      syncOptions:
+        # Apply the ignoreDifferences below when syncing too, not only when
+        # comparing (see templates/secret.yaml).
+        - RespectIgnoreDifferences=true
+      retry:
+        limit: 3
+        backoff:
+          duration: 10s
+          factor: 2
+          maxDuration: 2m
+    # The chart's Secret holds generated passwords/keys. Argo CD renders the
+    # chart without the cluster, so it would generate new ones each time:
+    # ignore its data and keep what's in the cluster.
+    ignoreDifferences:
+      - kind: Secret
+        name: tripsync-secrets
+        namespace: tripsync
+        jsonPointers:
+          - /data

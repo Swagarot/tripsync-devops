@@ -1,0 +1,20 @@
+# The homelab k3s cluster, deployed by Argo CD (GitOps). Layered on top of
+# values.yaml; see argocd/apps.yaml for the Application that uses it.
+#
+# This file IS the deployment: Argo CD makes the cluster match it. The two
+# image tags below are changed only by the Jenkins jobs (a commit per deploy,
+# "Deploy backend <sha>"), so `git log` on this file is the deploy history and
+# `git revert` of one of those commits is a rollback.
+# Jenkins edits it with yq, which drops blank lines: keep none here, so its
+# commits change exactly one line.
+backend:
+  image:
+    # Set by the backend Jenkins job (short SHA of tripsync-backend).
+    tag: "47501f9"
+frontend:
+  image:
+    # Set by the frontend Jenkins job (short SHA of tripsync-frontend).
+    tag: "ae4c22e"
+# Nightly backup to the NFS server (only the homelab has one).
+backup:
+  enabled: true

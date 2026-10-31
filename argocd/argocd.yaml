@@ -1,0 +1,116 @@
+# Argo CD (GitOps) on the homelab k3s: plain Helm values for the argo-cd chart,
+# installed by terraform/k3s/argocd.tf (like monitoring/).
+#
+# What it does: watches tripsync-devops on GitHub and keeps the cluster equal
+# to k8s-helm/tripsync + values-k3s.yaml (the Application is in apps.yaml).
+# Jenkins no longer runs helm against k3s; it commits a new image tag and
+# Argo CD rolls it out.
+
+# Only the pieces we use. Logins are Argo CD's own admin user (no SSO, so no
+# Dex); notifications go through Prometheus -> Alertmanager -> Discord like
+# every other alert (rules below), not Argo CD's notifications controller; and
+# there is one hand-written Application, so no ApplicationSet controller.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false
+
+configs:
+  cm:
+    # How often Argo CD asks GitHub for new commits (default 120s + up to 60s
+    # jitter). GitHub can't reach the homelab for a webhook (same reason
+    # Jenkins polls), so polling it is; one small repo every minute is cheap.
+    timeout.reconciliation: 60s
+    timeout.reconciliation.jitter: 10s
+  # The GitHub repo is private: Argo CD reads it with a read-only deploy key.
+  # That Secret is created by hand (never in git), see CLAUDE.md "Argo CD".
+
+server:
+  # Admin UI, private: a NodePort is reachable on the nodes' LAN and Tailscale
+  # addresses but NOT through the Cloudflare Tunnel, which only forwards to
+  # ingress-nginx. So: https://<control node Tailscale IP>:30443 (self-signed
+  # certificate, the browser warns once). Deliberately no Ingress.
+  service:
+    type: NodePort
+    nodePortHttp: 30080
+    nodePortHttps: 30443
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+repoServer:
+  # Clones the repo and runs `helm template`.
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 512Mi }
+
+redis:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+controller:
+  # The part that compares git with the cluster and syncs.
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 768Mi }
+  metrics:
+    enabled: true
+    # Picked up by kube-prometheus-stack (its selectors take ServiceMonitors
+    # and rules from every namespace).
+    serviceMonitor:
+      enabled: true
+    rules:
+      enabled: true
+      spec:
+        # Git and cluster differ and auto-sync hasn't fixed it: usually a
+        # sync that fails (bad manifest, a resource Kubernetes refuses).
+        - alert: ArgoCDAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD app {{ $labels.name }} is {{ $labels.sync_status }}"
+            description: >-
+              The cluster has not matched git for 15 minutes. Open the Argo CD
+              UI (port 30443 on the control node) and look at the last sync.
+
+        # Deployed but not working: a pod that crashes or never gets ready
+        # (e.g. a broken image). Progressing is normal during a rollout.
+        - alert: ArgoCDAppUnhealthy
+          expr: argocd_app_info{health_status!~"Healthy|Progressing"} == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Argo CD app {{ $labels.name }} is {{ $labels.health_status }}"
+            description: >-
+              Argo CD reports the app as {{ $labels.health_status }} for 10
+              minutes. To roll back, git revert the last "Deploy ..." commit in
+              tripsync-devops.
+
+        # A sync that ended in an error (Argo CD retries a few times first).
+        - alert: ArgoCDSyncFailed
+          expr: increase(argocd_app_sync_total{phase=~"Error|Failed"}[10m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD sync of {{ $labels.name }} failed"
+            description: >-
+              A sync of {{ $labels.name }} ended with {{ $labels.phase }}. The
+              Argo CD UI shows which resource failed and why.
+
+        # Without Argo CD's metrics the alerts above stay silent.
+        - alert: ArgoCDMetricsMissing
+          expr: absent(argocd_app_info)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No Argo CD metrics for 15 minutes"
+            description: >-
+              Prometheus gets nothing from the Argo CD application controller,
+              so deploys can't be watched. Check the pods in namespace argocd.

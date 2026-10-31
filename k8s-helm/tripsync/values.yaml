@@ -44,9 +44,11 @@ garage:
     limits:   { cpu: 500m, memory: 512Mi }
 
 backup:
-  # Nightly pg_dump + photo mirror to the NFS server. Only rendered where this
-  # StorageClass exists (the homelab k3s), see templates/backup.yaml.
-  enabled: true
+  # Nightly pg_dump + photo mirror to the NFS server. Off by default: only the
+  # homelab has the nfs-client StorageClass, so values-k3s.yaml turns it on.
+  # (It used to be switched on by asking the cluster with `lookup`; Argo CD
+  # renders the chart without the cluster, so that check always said no.)
+  enabled: false
   storageClassName: nfs-client
   storage: 30Gi
   schedule: "30 3 * * *"        # 03:30 every night
