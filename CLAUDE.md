@@ -106,9 +106,9 @@ alert rules. Retention about 7 days.
   retention; selectors pick up ServiceMonitors from any release; k3s's
   controller-manager/scheduler/proxy/etcd scraping disabled (localhost-only in
   k3s). All 21 targets up, only `Watchdog` firing. Stack uses ~965 MiB.
-- Grafana: no PVC, served at `/grafana` via ingress-nginx (host-less, like the
-  app). Because of the sub-path its own metrics are at `/grafana/metrics`
-  (`grafana.serviceMonitor.path`). Admin password is chart-generated in Secret
+- Grafana: no PVC. **Since 2026-10-31 a NodePort (30300), private**: before
+  that it was served at `/grafana` via a host-less Ingress, which also matched
+  the public tunnel hostname, so its login page was on the internet. Admin password is chart-generated in Secret
   `kube-prometheus-stack-grafana`, never in git. Reach the app and Grafana from
   the laptop via the control node's Tailscale IP (the 10.10.60.x LAN IPs are not
   reachable from it). Grafana restarted twice on first install: liveness probe
@@ -523,6 +523,72 @@ travel times):
     back in made route lines jump).
   - Longhorn alerts (open item 3, done): see below.
 
+**Argo CD sprint 2026-10-31 (built by Claude, decisions Roye's, explanation
+pending):** GitOps for k3s. Decisions: Jenkins commits the image tag to git
+(not Argo CD Image Updater); EKS stays push-based (Jenkins `helm upgrade`,
+it's a throwaway cluster); automatic sync with prune + self-heal; UIs private
+on NodePorts over Tailscale (no Ingress), Grafana moved the same way.
+- Installed by `terraform/k3s/argocd.tf`: argo-cd chart 10.11.6 (Argo CD
+  v3.5.6; no Dex, no notifications controller; the ApplicationSet controller
+  has no off switch and idles), values in `argocd/argocd.yaml`. UI:
+  `https://<control node Tailscale IP>:30443` (self-signed cert), user `admin`,
+  password in Secret `argocd-initial-admin-secret` (ns argocd; read it with
+  `kubectl -n argocd get secret argocd-initial-admin-secret -o
+  jsonpath='{.data.password}' | base64 -d`). Git polled every 60s (+10s jitter).
+- The Application `tripsync` (`argocd/apps.yaml`, argocd-apps chart 2.0.7):
+  `k8s-helm/tripsync` + `values.yaml` + **`values-k3s.yaml`** (image tags +
+  backup on), releaseName tripsync, namespace tripsync, automated prune +
+  selfHeal, retry 3x, no resources-finalizer (deleting the Application leaves
+  the app running).
+- Repo access: tripsync-devops is private; Argo CD reads it with a **read-only
+  GitHub deploy key** ("argocd on k3s (read-only)"), private half only in
+  Secret `repo-tripsync-devops` (ns argocd, label
+  `argocd.argoproj.io/secret-type=repository`), created by hand, never in git.
+- Chart changes: (1) the Secret used `lookup` to keep generated passwords;
+  Argo CD renders without the cluster, so it would generate new ones every sync
+  (DB login broken, everyone logged out). Fix: the Application ignores the
+  Secret's `/data` with `RespectIgnoreDifferences=true`. Verified: DB password
+  and JWT key hashes equal the running pods' after the takeover. (2) backup was
+  switched on by a `lookup` of the nfs-client StorageClass, always "no" under
+  Argo CD: now `backup.enabled` (default false, true in values-k3s.yaml).
+  (3) Secret + backup PVC carry `argocd.argoproj.io/sync-options:
+  Prune=false,Delete=false`. Postgres/Garage PVCs come from
+  volumeClaimTemplates, so Argo CD never owned them anyway.
+- Jenkinsfiles (backend `b8f9ad6`, frontend `38927a3`): `TARGET=k3s` no longer
+  runs helm. It checks out tripsync-devops, sets its own tag with
+  `mikefarah/yq:4.54.1` (keeps comments, drops blank lines, so the file has
+  none: one-line diffs; digit-only SHAs get quoted), commits "Deploy <service>
+  <sha>" and pushes with `gitUsernamePassword` (GIT_ASKPASS, token never in a
+  URL/log). No change = no commit; refused push = fetch, redo, retry (3x).
+  Still inside `lock('tripsync-release')`. Helm lint runs as EKS and as k3s.
+- Takeover (no downtime, no pod restarted): manual backup first; rendered
+  chart == live release apart from the 2 annotations; Application created with
+  auto-sync OFF, `argocd app diff --core` showed only the tracking annotation
+  (nothing to prune), then auto-sync on: Synced/Healthy at `fbf7e9c`.
+- **Incident during the switch:** both Jenkins jobs built on each of my two
+  devops pushes (17:51/17:52 and 18:01/18:02; helm history 106-109), running
+  the OLD Jenkinsfile (helm upgrade) with the NEW chart (backup default off):
+  Helm deleted the backup CronJob (its PVC + the NFS data survived thanks to
+  `helm.sh/resource-policy: keep`). Argo CD's first sync recreated it. Lessons:
+  push the pipeline change before (or with) the chart change it depends on;
+  and **open item 7 is real and affects both jobs**.
+- Monitoring: Argo CD controller ServiceMonitor + alerts ArgoCDAppOutOfSync
+  (15m), ArgoCDAppUnhealthy (10m, critical), ArgoCDSyncFailed,
+  ArgoCDMetricsMissing -> Discord.
+- Gotcha: when Helm adopts an existing object (here the Application first
+  made with kubectl for the dry run), it took ownership but did not apply the
+  difference (auto-sync stayed off); patched to match Helm's manifest.
+- Left for Roye: delete Helm's old release record (`kubectl -n default delete
+  secret -l owner=helm,name=tripsync`, removes only the record, not the app;
+  blocked for Claude as a shared-resource change). Until then `helm list` still
+  shows tripsync in default, stale.
+- **Verified end to end 2026-10-31:** pushing the new Jenkinsfiles started both
+  jobs; Jenkins (the existing GitHub token has `repo` scope, so it can push)
+  committed "Deploy frontend 38927a3" (f53954f) and "Deploy backend b8f9ad6"
+  (cf062fb); Argo CD rolled each out ~90 s after the commit; Synced/Healthy,
+  public site + API 200. Those Deploy commits did not cause further Deploy
+  commits (watched 7+ min): no loop.
+
 **Sprint 2026-10-28 (Roye: "finish everything"; all built by Claude, explanation
 pending; all pushed and deployed on k3s by Jenkins):**
 - **Shared trips** (backend `c2b93ad`, frontend `79ee1ad`). Decisions (Roye):
@@ -612,10 +678,10 @@ pending; all pushed and deployed on k3s by Jenkins):**
   (made by hand, not in Terraform; delete it when convenient).
   `terraform/k3s` gained `var.kubeconfig` (default ~/.kube/config).
 - **Laptop kubeconfig was replaced** (by 2026-10-20) with another course's
-  (`student07` / "workshop"); the k3s `default` context survives only in
-  `~/.kube/config.bak`. Use `kubectl --kubeconfig ~/.kube/config.bak --context
-  default` and `terraform ... -var kubeconfig=$HOME/.kube/config.bak`. Not
-  touched (it's Roye's to decide). k3s plan shows one harmless drift: the
+  (`student07` / "workshop"); for a while the k3s `default` context survived
+  only in `~/.kube/config.bak`. **Fixed by Roye 2026-10-31:** `~/.kube/config`
+  has the `default` context again (plus the stale EKS entry); use `--context
+  default`. k3s plan shows one harmless drift: the
   `kubectl.kubernetes.io/restartedAt` annotation on cloudflared.
 - Jenkins quirk (frontend job builds on devops commits): both Jenkinsfiles are
   identical (`checkout scm` + devops `git` step with `poll: false`), so the
@@ -656,15 +722,14 @@ screen (feedback addressed above).
 **Open items (updated 2026-10-28; features are complete):**
 **Order decided by Roye 2026-10-28:** (a) walkthrough (most important, next) ->
 (b) ArgoCD (maybe) -> (c) final document + PowerPoint -> (d) UI polish (last).
+2026-10-31: walkthrough mostly done (not finished); ArgoCD pulled forward and
+DONE (see Argo CD sprint).
 0. **UI polish pass (LAST, after the docs; Claude).** Go over every screen on desktop and
    phone (trips list, trip page tabs, share panel, join page, print page,
    login) for spacing, alignment, empty/loading states, consistency of buttons
    and icons, dark mode. Screenshot before/after; keep all tests green.
-0b. **ArgoCD (after the walkthrough, before the docs; optional).** GitOps: an
-   Argo CD Application watching `k8s-helm/tripsync` in tripsync-devops, so Jenkins
-   only builds/pushes images and bumps the image tag in git instead of running
-   `helm upgrade`. Decide first whether it replaces Jenkins' deploy stage or
-   only runs alongside it, and keep the EKS path working.
+0b. ~~ArgoCD~~: DONE 2026-10-31 (see Argo CD sprint). Left: delete Helm's
+   old tripsync release record (Roye).
 1. **Walkthrough for Roye (NEXT, top priority)** of everything marked "explanation pending" above
    (he must defend it), then the final document + PowerPoint from "Explained".
 2. ~~Collaborative trips + expense splitting~~: DONE 2026-10-28 (see Sprint).
@@ -703,12 +768,16 @@ screen (feedback addressed above).
 6. ~~EKS session~~: DONE 2026-10-28 (see Sprint). Not tested there: routes
    (no ORS Secret on EKS -> straight lines, by design) and Jenkins with
    TARGET=eks (proven in Week 4).
-7. Jenkins: the frontend job also builds on tripsync-devops commits despite
-   `poll: false`; the Jenkinsfiles are identical, so check that JOB's Polling
-   Log / SCM config in the Jenkins UI (needs Roye).
+7. Jenkins: **both** jobs build on tripsync-devops commits despite
+   `poll: false` (proven 2026-10-31 by helm history; Roye saw each job's
+   Polling Log checking only its own repo). With GitOps every "Deploy" commit
+   therefore starts both jobs again; they rebuild the same SHA, find nothing
+   to change and don't commit (no loop), but it wastes builds. Next: look at a
+   build started this way (its "Changes" / cause), and the job's Build
+   Triggers.
 8. ~~`use_lockfile`~~ DONE 2026-10-28. Left: delete the unused DynamoDB lock
-   table; optional offsite backup (R2) for the same-building gap; decide what
-   to do with the replaced laptop kubeconfig.
+   table; optional offsite backup (R2) for the same-building gap. (Laptop
+   kubeconfig: fixed by Roye 2026-10-31.)
 
 **Collaborative trips (BUILT 2026-10-28, see Sprint; original plan kept):** Plan: `trip_members(trip_id, user_id, role owner|editor|
 viewer)`, invite by link (signed token, no email provider), every owner check
@@ -739,8 +808,28 @@ pods) -> ingress-nginx -> `/api/*` backend (Flask) -> Postgres (StatefulSet,
 Longhorn) and Garage (photos, S3 API, Longhorn) and outside APIs; `/*` frontend
 (nginx + React PWA). Prometheus/Grafana/Loki watch everything; nightly backup to
 the NFS server. Delivery: git push -> Jenkins polls -> lint + tests in throwaway
-containers -> image tagged with the commit SHA -> Docker Hub -> helm upgrade
---atomic.
+containers -> image tagged with the commit SHA -> Docker Hub -> Jenkins
+commits the new tag to tripsync-devops -> Argo CD (in k3s) sees the commit and
+makes the cluster match git. (EKS: Jenkins runs helm upgrade --atomic itself.)
+
+**GitOps with Argo CD.** Push vs pull: before, Jenkins pushed changes into the
+cluster (it needed cluster admin credentials and the cluster was whatever the
+last `helm upgrade` left). Now git is the single description of what runs, and
+Argo CD, inside the cluster, pulls: every minute it renders the chart from git
+and compares it with the cluster. Out of sync -> it applies the difference
+(auto-sync); someone `kubectl edit`s something -> it puts it back (self-heal);
+something removed from git -> deleted (prune; never the Secret or the backup
+volume, which are marked Prune=false). Every deploy is a commit "Deploy backend
+<sha>", so the history of `values-k3s.yaml` is the deploy log and a rollback is
+`git revert`. Jenkins no longer needs to reach the k3s API at all for deploys.
+Q: why not Argo CD Image Updater (watches Docker Hub)? A: one less component,
+and the commit makes "who deployed what" explicit. Q: why is EKS different? A:
+it's a throwaway cluster built for one session; installing Argo CD there each
+time adds nothing, so it stays push-based. Q: what can go wrong? A: things the
+chart computed by asking the cluster (`lookup`) don't work, since Argo CD
+renders without the cluster: generated passwords would change every sync (we
+ignore the Secret's data) and the backup switch said no (now an explicit
+value). Alerts: Argo CD app out of sync / unhealthy / sync failed -> Discord.
 
 **Postgres in Kubernetes.** StatefulSet (not Deployment): stable identity, its own
 PVC that outlives `helm uninstall`, and never two copies at once during an update
@@ -881,8 +970,7 @@ details through the backend; no Google Places, no ratings (no free legitimate
 source); stops can still be entered by hand. No full offline
 tile prefetch (Workbox opportunistic caching only); export is PDF + Google Maps
 link only (no GPX/KML); Jenkins stays outside Kubernetes by design. GitOps with
-Argo CD is an **optional ~4h stretch sprint** after the core plan (it can be pulled
-forward after Week 4); until then Jenkins deploys directly.
+Argo CD: **done 2026-10-31** for k3s; EKS stays Jenkins-deploys-directly.
 
 ## Pipelines (design)
 
@@ -893,13 +981,18 @@ Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 3. Unit tests: pytest against a throwaway Postgres (backend); Vitest (frontend)
 4. Build the image, tag = short Git SHA of **that app repo**
 5. Push to Docker Hub (`swagarot/tripsync-backend`, `swagarot/tripsync-frontend`)
-6. Deploy: `helm upgrade tripsync k8s-helm/tripsync --atomic
-   --set-string <service>.image.tag=$IMAGE_TAG`, branching on the `TARGET`
-   parameter (choices `k3s` default, `eks`; polling builds always use k3s):
-   - `k3s`: release in namespace `default`, using the agent's own kubeconfig.
+6. Deploy, branching on the `TARGET` parameter (choices `k3s` default, `eks`;
+   polling builds always use k3s):
+   - `k3s` (since 2026-10-31, GitOps): set `<service>.image.tag` in
+     `k8s-helm/tripsync/values-k3s.yaml` with yq, commit "Deploy <service>
+     <sha>", push to tripsync-devops; Argo CD deploys. Needs the GitHub
+     credential to have write access to tripsync-devops.
    - `eks`: AWS credentials injected with `withCredentials`, a **separate**
      kubeconfig written into the workspace (`aws eks update-kubeconfig
-     --kubeconfig "$WORKSPACE/kubeconfig-eks"`), release in namespace `tripsync`.
+     --kubeconfig "$WORKSPACE/kubeconfig-eks"`), then `helm upgrade --atomic
+     --set-string <service>.image.tag=$IMAGE_TAG`, release in namespace
+     `tripsync`. (Before Argo CD the k3s branch did the same with the release
+     stored in namespace `default`.)
 
 **Important:** `helm upgrade` recomputes values from `values.yaml` plus the
 `--set` flags of that one command. A backend deploy that only sets the backend
