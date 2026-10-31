@@ -732,11 +732,9 @@ screen (feedback addressed above).
    caught".
 3. **UI polish pass** (Claude, last), item 0 below.
 Small things for Roye, any time:
-- Delete Helm's stale tripsync release record: `kubectl --context default -n
-  default delete secret -l owner=helm,name=tripsync` (only the record; the app
-  is Argo CD's now). Still there on 2026-10-31.
-- Jenkins: find why both jobs build on tripsync-devops commits (item 7).
-- Delete the unused DynamoDB table `tripsync-tfstate-lock` (item 8).
+- ~~Delete Helm's stale tripsync release record~~: done by Roye 2026-10-31.
+- ~~Jenkins builds on tripsync-devops commits~~: fixed 2026-10-31 (item 7).
+- ~~Delete the unused DynamoDB table~~: done by Roye 2026-10-31.
 Optional: offsite backup to Cloudflare R2 (item 8); Postgres replication
 (item 3 C); re-run an EKS session with TARGET=eks to prove the Helm path still
 works after the 2026-10-31 chart changes (low risk: only backup now defaults to
@@ -751,7 +749,7 @@ DONE (see Argo CD sprint).
    login) for spacing, alignment, empty/loading states, consistency of buttons
    and icons, dark mode. Screenshot before/after; keep all tests green.
 0b. ~~ArgoCD~~: DONE 2026-10-31 (see Argo CD sprint). Left: delete Helm's
-   old tripsync release record (Roye). Follow-up the same day: Deployments
+   old tripsync release record (Roye; done 2026-10-31). Follow-up the same day: Deployments
    keep 3 old ReplicaSets (`revisionHistoryLimit: 3`, default 10) and the
    Application keeps 3 sync-history entries (`3487945`).
 1. **Walkthrough for Roye (NEXT, top priority)** of everything marked "explanation pending" above
@@ -792,15 +790,24 @@ DONE (see Argo CD sprint).
 6. ~~EKS session~~: DONE 2026-10-28 (see Sprint). Not tested there: routes
    (no ORS Secret on EKS -> straight lines, by design) and Jenkins with
    TARGET=eks (proven in Week 4).
-7. Jenkins: **both** jobs build on tripsync-devops commits despite
-   `poll: false` (proven 2026-10-31 by helm history; Roye saw each job's
-   Polling Log checking only its own repo). With GitOps every "Deploy" commit
-   therefore starts both jobs again; they rebuild the same SHA, find nothing
-   to change and don't commit (no loop), but it wastes builds. Next: look at a
-   build started this way (its "Changes" / cause), and the job's Build
-   Triggers.
-8. ~~`use_lockfile`~~ DONE 2026-10-28. Left: delete the unused DynamoDB lock
-   table; optional offsite backup (R2) for the same-building gap. (Laptop
+7. ~~Jenkins builds on tripsync-devops commits~~: FIXED 2026-10-31. **Both**
+   jobs were started by tripsync-devops commits despite `poll: false` on the
+   `git` step (proven from helm history and Docker Hub push times: each app
+   image was re-pushed ~5 min, one polling interval, after every devops push;
+   each job's Polling Log in the UI only showed its own repo, root cause not
+   found). With GitOps every "Deploy" commit then rebuilt both apps (no loop:
+   same SHA -> no commit, but wasted builds). Fix (backend `10cd680`,
+   frontend `659bda6`): the Checkout stage clones tripsync-devops with a plain
+   `sh 'git clone ...'` inside `gitUsernamePassword`. Jenkins only polls repos
+   checked out by git/checkout steps, so it can't see this one.
+   Verified the same day: the two builds started by the fix's own commits
+   pushed "Deploy frontend 659bda6" (16:37 UTC) and "Deploy backend 10cd680"
+   (16:41); no image was re-pushed in the 10 minutes after (before the fix:
+   both rebuilt within ~5 min of every devops commit); Argo CD Synced/Healthy
+   on both new tags.
+8. ~~`use_lockfile`~~ DONE 2026-10-28; the old DynamoDB lock table
+   `tripsync-tfstate-lock` was deleted by Roye 2026-10-31. Left: optional
+   offsite backup (R2) for the same-building gap. (Laptop
    kubeconfig: fixed by Roye 2026-10-31.)
 
 **Collaborative trips (BUILT 2026-10-28, see Sprint; original plan kept):** Plan: `trip_members(trip_id, user_id, role owner|editor|
@@ -1012,7 +1019,8 @@ Argo CD: **done 2026-10-31** for k3s; EKS stays Jenkins-deploys-directly.
 
 Each app repo has its own Jenkinsfile running on the agent labeled `k3s-agent`:
 
-1. Checkout its own repo, plus this repo (for the chart)
+1. Checkout its own repo (`checkout scm`, polled), plus this repo for the chart
+   with a plain shell `git clone` (not polled, see open item 7)
 2. Lint in throwaway containers, in parallel: `helm lint`, flake8 or ESLint
 3. Unit tests: pytest against a throwaway Postgres (backend); Vitest (frontend)
 4. Build the image, tag = short Git SHA of **that app repo**
