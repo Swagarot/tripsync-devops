@@ -5,6 +5,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
+  # Old ReplicaSets kept (default 10); see backend-deployment.yaml.
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: tripsync-frontend

@@ -7,6 +7,8 @@ applications:
   tripsync:
     namespace: argocd
     project: default
+    # Sync history shown in the UI (default 10). Git has the full history.
+    revisionHistoryLimit: 3
     # No resources-finalizer on purpose: deleting this Application leaves the
     # app running (Postgres, photos...) instead of deleting everything it made.
     source:

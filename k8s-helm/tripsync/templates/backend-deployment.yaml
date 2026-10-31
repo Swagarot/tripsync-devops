@@ -5,6 +5,9 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   replicas: {{ .Values.backend.replicaCount }}
+  # Old ReplicaSets kept for `kubectl rollout undo` (default 10, one per
+  # deploy). Rollback is git revert now (Argo CD), so 3 is plenty.
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: tripsync-backend
