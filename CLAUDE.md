@@ -719,7 +719,29 @@ deployed on k3s and public at https://tripsync.royerandomnonsense.uk; backend
 Roye tested offline add + sync on his phone (works) and the UI on a 2000 px
 screen (feedback addressed above).
 
-**Open items (updated 2026-10-28; features are complete):**
+**Open items (updated 2026-10-31; features are complete):**
+
+**WHAT'S LEFT, in order (2026-10-31):**
+1. **Finish the walkthrough** (Roye, with Claude): the rest of "explanation
+   pending", now including the Argo CD sprint (GitOps, push vs pull, the
+   Secret/`lookup` problem, the backup-CronJob incident, ReplicaSets).
+2. **Final document + PowerPoint** from "Explained" (+ the week-by-week
+   progress). Good demo moments: a commit -> "Deploy ..." commit -> Argo CD
+   rolls it out ~90 s later; `kubectl edit` something and watch self-heal undo
+   it; the backup incident and the CronJob incident as "what monitoring/GitOps
+   caught".
+3. **UI polish pass** (Claude, last), item 0 below.
+Small things for Roye, any time:
+- Delete Helm's stale tripsync release record: `kubectl --context default -n
+  default delete secret -l owner=helm,name=tripsync` (only the record; the app
+  is Argo CD's now). Still there on 2026-10-31.
+- Jenkins: find why both jobs build on tripsync-devops commits (item 7).
+- Delete the unused DynamoDB table `tripsync-tfstate-lock` (item 8).
+Optional: offsite backup to Cloudflare R2 (item 8); Postgres replication
+(item 3 C); re-run an EKS session with TARGET=eks to prove the Helm path still
+works after the 2026-10-31 chart changes (low risk: only backup now defaults to
+off, which EKS wanted anyway); apply the harmless cloudflared drift.
+
 **Order decided by Roye 2026-10-28:** (a) walkthrough (most important, next) ->
 (b) ArgoCD (maybe) -> (c) final document + PowerPoint -> (d) UI polish (last).
 2026-10-31: walkthrough mostly done (not finished); ArgoCD pulled forward and
@@ -729,7 +751,9 @@ DONE (see Argo CD sprint).
    login) for spacing, alignment, empty/loading states, consistency of buttons
    and icons, dark mode. Screenshot before/after; keep all tests green.
 0b. ~~ArgoCD~~: DONE 2026-10-31 (see Argo CD sprint). Left: delete Helm's
-   old tripsync release record (Roye).
+   old tripsync release record (Roye). Follow-up the same day: Deployments
+   keep 3 old ReplicaSets (`revisionHistoryLimit: 3`, default 10) and the
+   Application keeps 3 sync-history entries (`3487945`).
 1. **Walkthrough for Roye (NEXT, top priority)** of everything marked "explanation pending" above
    (he must defend it), then the final document + PowerPoint from "Explained".
 2. ~~Collaborative trips + expense splitting~~: DONE 2026-10-28 (see Sprint).
@@ -830,6 +854,18 @@ chart computed by asking the cluster (`lookup`) don't work, since Argo CD
 renders without the cluster: generated passwords would change every sync (we
 ignore the Secret's data) and the backup switch said no (now an explicit
 value). Alerts: Argo CD app out of sync / unhealthy / sync failed -> Discord.
+
+**Deployment vs ReplicaSet vs Pod (what the Argo CD tree shows).** A
+Deployment is the thing we write ("run 1 copy of backend:b8f9ad6"). It doesn't
+run pods itself: for each version of the pod template it creates a ReplicaSet,
+whose only job is "keep N identical pods running" (replace one that dies).
+A new image tag = a new pod template = a new ReplicaSet: the Deployment scales
+the new one up and the old one down to 0 (rolling update; with readiness
+probes no traffic goes to a pod that isn't ready). The old ReplicaSets stay at
+0 pods so `kubectl rollout undo` can scale one back up; we keep 3
+(`revisionHistoryLimit`), since with GitOps the real rollback is `git revert`
+(otherwise self-heal would undo a manual rollout undo). So in Argo CD: one
+Deployment -> several ReplicaSets (only the newest has pods) -> its Pod.
 
 **Postgres in Kubernetes.** StatefulSet (not Deployment): stable identity, its own
 PVC that outlives `helm uninstall`, and never two copies at once during an update
