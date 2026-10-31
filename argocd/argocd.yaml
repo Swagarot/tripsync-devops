@@ -8,13 +8,11 @@
 
 # Only the pieces we use. Logins are Argo CD's own admin user (no SSO, so no
 # Dex); notifications go through Prometheus -> Alertmanager -> Discord like
-# every other alert (rules below), not Argo CD's notifications controller; and
-# there is one hand-written Application, so no ApplicationSet controller.
+# every other alert (rules below), not Argo CD's notifications controller.
+# (The ApplicationSet controller has no off switch in this chart; it idles.)
 dex:
   enabled: false
 notifications:
-  enabled: false
-applicationSet:
   enabled: false
 
 configs:
