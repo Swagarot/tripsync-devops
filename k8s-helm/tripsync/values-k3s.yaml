@@ -14,7 +14,7 @@ backend:
 frontend:
   image:
     # Set by the frontend Jenkins job (short SHA of tripsync-frontend).
-    tag: "38927a3"
+    tag: "659bda6"
 # Nightly backup to the NFS server (only the homelab has one).
 backup:
   enabled: true
