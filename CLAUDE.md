@@ -725,8 +725,13 @@ screen (feedback addressed above).
 1. **Finish the walkthrough** (Roye, with Claude): the rest of "explanation
    pending", now including the Argo CD sprint (GitOps, push vs pull, the
    Secret/`lookup` problem, the backup-CronJob incident, ReplicaSets).
-2. **Final document + PowerPoint** from "Explained" (+ the week-by-week
-   progress). Good demo moments: a commit -> "Deploy ..." commit -> Argo CD
+2. **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
+   case we'll edit them"), in `docs/final/`: `documentation.html` -> printed to
+   `TripSync-Documentation.pdf` with headless Chrome (command at the top of the
+   HTML; edit the HTML, then reprint), and `TripSync-Presentation.pptx` (21
+   slides, speaker notes on each; edit in PowerPoint). Left: Roye's review;
+   optional screenshots (app, Argo CD tree, Grafana dashboard, a Discord
+   alert). Demo moments used on the demo slide: a commit -> "Deploy ..." commit -> Argo CD
    rolls it out ~90 s later; `kubectl edit` something and watch self-heal undo
    it; the backup incident and the CronJob incident as "what monitoring/GitOps
    caught".

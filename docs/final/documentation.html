@@ -1,0 +1,710 @@
+<!doctype html>
+<!--
+  TripSync final project documentation. Source of TripSync-Documentation.pdf.
+  To rebuild the PDF after editing (PowerShell, from this folder):
+    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new --no-pdf-header-footer `
+      --print-to-pdf="$PWD\TripSync-Documentation.pdf" "file:///$($PWD -replace '\\','/')/documentation.html"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TripSync: DevOps Final Project</title>
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm; }
+  :root {
+    --ink: #1b2b34; --muted: #5b6b73; --teal: #0f6e6e; --teal-soft: #e3f0ef;
+    --coral: #d9512c; --coral-soft: #fbe9e3; --line: #d5dfdf; --paper: #ffffff;
+    --code: #f2f5f5;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 10pt/1.45 "Segoe UI", Calibri, Arial, sans-serif; }
+  h1, h2, h3 { font-family: Cambria, Georgia, serif; color: var(--ink); line-height: 1.2; }
+  h1 { font-size: 22pt; margin: 0 0 4mm; color: var(--teal); }
+  h2 { font-size: 14pt; margin: 7mm 0 2mm; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; color: var(--teal); }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1mm; }
+  code { font: 9pt Consolas, "Courier New", monospace; background: var(--code);
+         padding: 0 1.2mm; border-radius: 1mm; }
+  pre { font: 8.8pt/1.45 Consolas, "Courier New", monospace; background: var(--code);
+        padding: 3mm 4mm; border-radius: 2mm; white-space: pre-wrap; margin: 0 0 3mm; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 9.5pt; }
+  th, td { text-align: left; vertical-align: top; padding: 1.6mm 2.2mm; border-bottom: 1px solid var(--line); }
+  th { background: var(--teal-soft); color: var(--teal); font-weight: 600; }
+  tr { break-inside: avoid; }
+  a { color: var(--teal); }
+  .chapter { break-before: page; }
+  .follow { margin-top: 12mm; }
+  .lead { font-size: 11.5pt; color: var(--muted); }
+  .note { background: var(--teal-soft); border-radius: 2mm; padding: 3mm 4mm; margin: 2mm 0 4mm; break-inside: avoid; }
+  .warn { background: var(--coral-soft); border-radius: 2mm; padding: 3mm 4mm; margin: 2mm 0 4mm; break-inside: avoid; }
+  .note b:first-child, .warn b:first-child { display: block; margin-bottom: 1mm; }
+  .fig { margin: 3mm 0 5mm; break-inside: avoid; text-align: center; }
+  .fig svg { width: 100%; height: auto; }
+  .fig figcaption { font-size: 9pt; color: var(--muted); margin-top: 1.5mm; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 3mm 0 4mm; }
+  .stat { background: var(--teal-soft); border-radius: 2mm; padding: 3mm; text-align: center; }
+  .stat b { display: block; font: 700 20pt Cambria, Georgia, serif; color: var(--teal); }
+  .stat span { font-size: 8.5pt; color: var(--muted); }
+  .q { font-weight: 600; margin-bottom: 0.5mm; }
+
+  /* cover */
+  .cover { height: 255mm; display: flex; flex-direction: column; justify-content: space-between; }
+  .cover .top { margin-top: 30mm; }
+  .cover .kicker { font-size: 10pt; letter-spacing: .18em; text-transform: uppercase; color: var(--coral); font-weight: 600; }
+  .cover h1 { font-size: 44pt; margin: 4mm 0 3mm; }
+  .cover .sub { font-size: 15pt; color: var(--muted); max-width: 140mm; }
+  .cover .meta { border-top: 1px solid var(--line); padding-top: 5mm; font-size: 10pt; color: var(--muted); }
+  .cover .meta b { color: var(--ink); }
+
+  /* table of contents */
+  .toc ol { list-style: none; padding: 0; columns: 1; }
+  .toc li { display: flex; gap: 3mm; padding: 1.6mm 0; border-bottom: 1px dotted var(--line); font-size: 11pt; }
+  .toc li span:first-child { color: var(--coral); font-weight: 700; width: 8mm; }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <div class="top">
+    <div class="kicker">DevOps course · Final project</div>
+    <h1>TripSync</h1>
+    <p class="sub">An offline-first, map-first trip planner, hosted for real on a homelab Kubernetes cluster and delivered by a fully automated pipeline.</p>
+    <div class="fig" style="margin-top:14mm">
+      <svg viewBox="0 0 640 150" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="12">
+        <g fill="#e3f0ef" stroke="#0f6e6e" stroke-width="1.5">
+          <rect x="0" y="45" width="100" height="56" rx="10"/><rect x="135" y="45" width="100" height="56" rx="10"/>
+          <rect x="270" y="45" width="100" height="56" rx="10"/><rect x="405" y="45" width="100" height="56" rx="10"/>
+          <rect x="540" y="45" width="100" height="56" rx="10" fill="#fbe9e3" stroke="#d9512c"/>
+        </g>
+        <g fill="#1b2b34" text-anchor="middle" font-weight="600">
+          <text x="50" y="70">git push</text><text x="185" y="70">Jenkins</text><text x="320" y="70">Docker Hub</text>
+          <text x="455" y="70">git (GitOps)</text><text x="590" y="70">Argo CD</text>
+        </g>
+        <g fill="#5b6b73" text-anchor="middle" font-size="10.5">
+          <text x="50" y="88">2 app repos</text><text x="185" y="88">lint · test · build</text><text x="320" y="88">SHA-tagged image</text>
+          <text x="455" y="88">“Deploy &lt;sha&gt;”</text><text x="590" y="88">k3s cluster</text>
+        </g>
+        <g stroke="#0f6e6e" stroke-width="2" marker-end="url(#a)">
+          <line x1="102" y1="73" x2="131" y2="73"/><line x1="237" y1="73" x2="266" y2="73"/>
+          <line x1="372" y1="73" x2="401" y2="73"/><line x1="507" y1="73" x2="536" y2="73"/>
+        </g>
+        <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0f6e6e"/></marker></defs>
+      </svg>
+    </div>
+  </div>
+  <div class="meta">
+    <p><b>Author:</b> Roye &nbsp;·&nbsp; <b>Course:</b> Technion DevOps &nbsp;·&nbsp; <b>Date:</b> November 2026</p>
+    <p><b>Live:</b> https://tripsync.royerandomnonsense.uk &nbsp;·&nbsp; <b>Code:</b> github.com/Swagarot (tripsync-backend, tripsync-frontend, tripsync-devops)</p>
+  </div>
+</section>
+
+<!-- ============================== CONTENTS ============================== -->
+<section class="chapter toc">
+  <h1>Contents</h1>
+  <ol>
+    <li><span>1</span><span>Overview and goals</span></li>
+    <li><span>2</span><span>Architecture</span></li>
+    <li><span>3</span><span>The application</span></li>
+    <li><span>4</span><span>Continuous integration: the Jenkins pipelines</span></li>
+    <li><span>5</span><span>Continuous delivery: GitOps with Argo CD</span></li>
+    <li><span>6</span><span>Kubernetes and the Helm chart</span></li>
+    <li><span>7</span><span>Infrastructure as code: Terraform for k3s and AWS EKS</span></li>
+    <li><span>8</span><span>Storage, data and backups</span></li>
+    <li><span>9</span><span>Networking and exposure</span></li>
+    <li><span>10</span><span>Observability: metrics, logs and alerts</span></li>
+    <li><span>11</span><span>Security</span></li>
+    <li><span>12</span><span>Testing</span></li>
+    <li><span>13</span><span>Incidents and lessons learned</span></li>
+    <li><span>14</span><span>Project timeline</span></li>
+    <li><span>15</span><span>Limitations and future work</span></li>
+    <li><span>A</span><span>Appendix: versions and repository layout</span></li>
+  </ol>
+</section>
+
+<!-- ============================== 1 OVERVIEW ============================== -->
+<section class="chapter">
+  <h1>1. Overview and goals</h1>
+  <p class="lead">TripSync is a multi-user trip planner: you build a trip day by day on a map, share it with friends, split the costs, and keep using it with no connection. It is installable as an app (PWA) and is publicly hosted at <b>tripsync.royerandomnonsense.uk</b>.</p>
+
+  <p>The app is the vehicle. The point of the project is everything around it: how the code gets from a commit to a running, monitored, backed-up service without anyone touching a server. Every part of that path is automated and kept in git:</p>
+  <ul>
+    <li><b>Three repositories</b>, as the teachers asked: <code>tripsync-backend</code> and <code>tripsync-frontend</code>, each with its own <b>Jenkinsfile</b> (two independent pipelines), and <code>tripsync-devops</code> with the Helm chart, Terraform, monitoring configuration and the project's <code>CLAUDE.md</code>.</li>
+    <li><b>CI</b> in Jenkins: lint, unit tests against a real throwaway database, image build tagged with the commit SHA, push to Docker Hub.</li>
+    <li><b>CD with GitOps</b>: Jenkins records the new image tag in git and <b>Argo CD</b>, running inside the cluster, makes the cluster match git.</li>
+    <li><b>Infrastructure as code</b>: Terraform builds everything around the app on the homelab k3s cluster, and builds a complete AWS environment (VPC + EKS) that can be created and destroyed on demand.</li>
+    <li><b>Operations</b>: replicated storage, nightly backups with a tested restore, metrics, logs, dashboards and alerts delivered to Discord.</li>
+  </ul>
+
+  <div class="stats">
+    <div class="stat"><b>2</b><span>independent Jenkins pipelines</span></div>
+    <div class="stat"><b>~90 s</b><span>from “Deploy” commit to running pods</span></div>
+    <div class="stat"><b>291</b><span>automated tests (225 backend, 66 frontend)</span></div>
+    <div class="stat"><b>57</b><span>AWS resources, created and destroyed by Terraform</span></div>
+  </div>
+
+  <h2>Requirements and how they are met</h2>
+  <table>
+    <tr><th style="width:38%">Requirement</th><th>Where</th></tr>
+    <tr><td>Separate frontend and backend repositories</td><td><code>tripsync-backend</code>, <code>tripsync-frontend</code>; split from the original combined repo with <code>git subtree split</code>, so history was kept. The old repo is archived.</td></tr>
+    <tr><td>A Jenkinsfile in each app repo</td><td>Two jobs, each polling its own repo; the stages are described in chapter 4.</td></tr>
+    <tr><td>Containerisation</td><td>A Dockerfile per app (Gunicorn for Flask; nginx for the React build); <code>docker-compose.yml</code> for local development.</td></tr>
+    <tr><td>Kubernetes deployment</td><td>The Helm chart <code>k8s-helm/tripsync</code>, deployed to k3s by Argo CD and to EKS by Jenkins.</td></tr>
+    <tr><td>Infrastructure as code</td><td><code>terraform/k3s</code> (homelab add-ons) and <code>terraform/aws</code> (own VPC module and EKS).</td></tr>
+    <tr><td>Monitoring; project context file</td><td>kube-prometheus-stack, Loki + Alloy, custom alerts and dashboard, Alertmanager → Discord; <code>CLAUDE.md</code> in <code>tripsync-devops</code>.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 2 ARCHITECTURE ============================== -->
+<section class="chapter">
+  <h1>2. Architecture</h1>
+  <p>Two flows matter: how a <b>request</b> reaches the app, and how a <b>change</b> reaches the cluster.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11">
+      <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0f6e6e"/></marker></defs>
+      <!-- cluster frame -->
+      <rect x="215" y="10" width="480" height="312" rx="12" fill="#f7fafa" stroke="#9fbcbc" stroke-dasharray="5 4"/>
+      <text x="230" y="30" fill="#5b6b73" font-weight="600">Homelab k3s cluster (1 control node + 2 workers)</text>
+      <!-- outside -->
+      <g fill="#fbe9e3" stroke="#d9512c" stroke-width="1.3">
+        <rect x="10" y="60" width="90" height="44" rx="8"/><rect x="10" y="150" width="90" height="44" rx="8"/>
+      </g>
+      <text x="55" y="86" text-anchor="middle" font-weight="600">Browser</text>
+      <text x="55" y="170" text-anchor="middle" font-weight="600">Cloudflare</text>
+      <text x="55" y="184" text-anchor="middle" fill="#5b6b73" font-size="9.5">HTTPS edge</text>
+      <!-- in cluster -->
+      <g fill="#e3f0ef" stroke="#0f6e6e" stroke-width="1.3">
+        <rect x="235" y="150" width="105" height="44" rx="8"/>
+        <rect x="365" y="150" width="105" height="44" rx="8"/>
+        <rect x="500" y="95" width="90" height="40" rx="8"/>
+        <rect x="500" y="205" width="90" height="40" rx="8"/>
+        <rect x="610" y="60" width="75" height="36" rx="8"/>
+        <rect x="610" y="110" width="75" height="36" rx="8"/>
+        <rect x="235" y="255" width="140" height="50" rx="8"/>
+        <rect x="395" y="255" width="140" height="50" rx="8"/>
+        <rect x="555" y="255" width="130" height="50" rx="8"/>
+      </g>
+      <g text-anchor="middle" font-weight="600">
+        <text x="287" y="170">cloudflared ×2</text><text x="417" y="170">ingress-nginx</text>
+        <text x="545" y="119">backend</text><text x="545" y="229">frontend</text>
+        <text x="647" y="82">Postgres</text><text x="647" y="132">Garage (S3)</text>
+        <text x="305" y="276">Prometheus · Grafana</text><text x="465" y="276">Loki · Alloy</text><text x="620" y="276">Argo CD</text>
+      </g>
+      <g text-anchor="middle" fill="#5b6b73" font-size="9.5">
+        <text x="287" y="184">outbound tunnel</text><text x="417" y="184">2 Ingresses</text>
+        <text x="545" y="129">Flask · /api/*</text><text x="545" y="239">nginx + React PWA</text>
+        <text x="305" y="291">metrics · alerts · dashboards</text><text x="465" y="291">logs of every pod</text><text x="620" y="291">watches git</text>
+      </g>
+      <g stroke="#0f6e6e" stroke-width="1.6" fill="none" marker-end="url(#b)">
+        <path d="M55 104 V146"/>
+        <path d="M100 172 H231"/>
+        <path d="M340 172 H361"/>
+        <path d="M470 165 L497 120"/>
+        <path d="M470 180 L497 222"/>
+        <path d="M590 108 L607 82"/>
+        <path d="M590 118 L607 126"/>
+      </g>
+      <text x="165" y="164" text-anchor="middle" fill="#5b6b73" font-size="9.5">requests come back</text>
+      <text x="165" y="190" text-anchor="middle" fill="#5b6b73" font-size="9.5">down the tunnel</text>
+      <text x="230" y="230" fill="#5b6b73" font-size="9.5">Storage: Longhorn (2 replicas) · nightly backup → NFS server</text>
+    </svg>
+    <figcaption>Figure 1. Request path. No router ports are open: cloudflared dials out to Cloudflare and requests come back over that connection.</figcaption>
+  </figure>
+
+  <h2>The homelab</h2>
+  <table>
+    <tr><th style="width:28%">Machine</th><th>Role</th></tr>
+    <tr><td>k3s control node</td><td>Kubernetes API; tainted <code>NoSchedule</code>, so workloads run on the workers. Traefik is disabled in favour of ingress-nginx.</td></tr>
+    <tr><td>2 × k3s workers</td><td>All app and platform pods; each has a dedicated 100 GB disk for Longhorn (6 GiB RAM each).</td></tr>
+    <tr><td>Jenkins controller (LXC)</td><td>Jenkins UI and job configuration; 0 executors, so nothing builds on it.</td></tr>
+    <tr><td>Jenkins agent (VM)</td><td>Runs every build: Docker, Helm, kubectl, git; label <code>k3s-agent</code>.</td></tr>
+    <tr><td>NFS server</td><td>Nightly backup target (<code>nfs-client</code> StorageClass).</td></tr>
+  </table>
+  <p>Admin access (Jenkins, Grafana, Argo CD, kubectl) is over <b>Tailscale</b> only. The public reaches only the app, through the Cloudflare Tunnel.</p>
+
+  <h2>The cloud environment</h2>
+  <p>The same chart also runs on <b>AWS EKS</b> (eu-central-1), built from scratch by <code>terraform apply</code> (57 resources, about 20 minutes) and removed by <code>terraform destroy</code>. EKS is deliberately ephemeral: it is created for a test session and destroyed afterwards, since its control plane, NAT gateway, node and load balancer all bill by the hour. Each app pipeline has a <code>TARGET</code> parameter (<code>k3s</code> by default, or <code>eks</code>).</p>
+</section>
+
+<!-- ============================== 3 APP ============================== -->
+<section class="chapter">
+  <h1>3. The application</h1>
+  <p class="lead">Kept brief: the course is about delivery and operations, but the app's design shaped several of the infrastructure decisions.</p>
+
+  <div class="cols">
+    <div>
+      <h3>Backend: tripsync-backend</h3>
+      <ul>
+        <li>Python 3.11, Flask (app factory), Gunicorn (1 worker, 4 threads).</li>
+        <li>PostgreSQL 18 via SQLAlchemy; schema changes are Alembic migrations.</li>
+        <li>JWT auth (7-day token, long on purpose for offline use), scrypt password hashes, rate limits.</li>
+        <li>Photos in Garage (S3 API), re-encoded with Pillow, metadata/GPS stripped, served by signed URLs.</li>
+        <li>Prometheus metrics at <code>/metrics</code> (cluster-internal only).</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Frontend: tripsync-frontend</h3>
+      <ul>
+        <li>React + Vite, built into static files served by nginx.</li>
+        <li>Installable PWA: a service worker keeps the app available offline.</li>
+        <li>Offline-first store: every edit is a small “op”, applied on screen at once, queued in IndexedDB and sent in order when online.</li>
+        <li>Map-first UI: Leaflet + MapLibre vector tiles, drag-and-drop itinerary, light/dark/dim themes.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Features</h2>
+  <ul>
+    <li>Trips → days → stops on a map; place search with photos, opening hours and Wikipedia summaries.</li>
+    <li>Routes per day: walking, cycling, driving (OpenRouteService) and public transport (Transitous).</li>
+    <li>Ideas list, lodging, notes and checklist, 16-day weather warnings, expenses in any currency (ECB rates).</li>
+    <li><b>Shared trips</b>: owner / editor / viewer, invite links that expire after 7 days, <b>expense splitting</b> with “settle up”.</li>
+    <li>Personal ratings and own photos per stop; export as a PDF, as a single offline HTML “keepsake”, or as a Google Maps route.</li>
+  </ul>
+
+  <h2>Design choices with infrastructure consequences</h2>
+  <table>
+    <tr><th style="width:32%">Choice</th><th>Consequence</th></tr>
+    <tr><td>IDs created on the device (UUIDs); creating twice with the same ID is a no-op</td><td>Offline edits and retries are safe; the sync queue can resend without creating duplicates.</td></tr>
+    <tr><td>All outside services go through the backend</td><td>One shared cache, API keys stay on the server, call rates are under our control (the routing key allows 200 routes/day).</td></tr>
+    <tr><td>Same origin everywhere (<code>/api</code> on the same host)</td><td>No CORS in production; the two Ingresses and the compose gateway reproduce the same routing.</td></tr>
+    <tr><td>PWA + service worker</td><td>Requires HTTPS, one reason for the Cloudflare Tunnel.</td></tr>
+    <tr><td>Photos in object storage, not the database</td><td>The database and its backups stay small; the same S3 API works on AWS.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 4 CI ============================== -->
+<section class="chapter">
+  <h1>4. Continuous integration: the Jenkins pipelines</h1>
+  <p>Each app repo has its own Jenkinsfile, and each runs as its own Jenkins job on the agent. The two are deliberately alike, so one explanation covers both.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11">
+      <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0f6e6e"/></marker></defs>
+      <g fill="#e3f0ef" stroke="#0f6e6e" stroke-width="1.3">
+        <rect x="0" y="30" width="80" height="50" rx="8"/><rect x="100" y="10" width="95" height="40" rx="8"/>
+        <rect x="100" y="60" width="95" height="40" rx="8"/><rect x="215" y="30" width="85" height="50" rx="8"/>
+        <rect x="320" y="30" width="80" height="50" rx="8"/><rect x="420" y="30" width="80" height="50" rx="8"/>
+        <rect x="520" y="30" width="80" height="50" rx="8"/>
+      </g>
+      <rect x="620" y="30" width="80" height="50" rx="8" fill="#fbe9e3" stroke="#d9512c" stroke-width="1.3"/>
+      <g text-anchor="middle" font-weight="600">
+        <text x="40" y="52">Checkout</text><text x="147" y="34">helm lint</text><text x="147" y="84">flake8 / ESLint</text>
+        <text x="257" y="52">Unit tests</text><text x="360" y="52">Image tag</text><text x="460" y="52">Build</text>
+        <text x="560" y="52">Push</text><text x="660" y="52">Deploy</text>
+      </g>
+      <g text-anchor="middle" fill="#5b6b73" font-size="9.5">
+        <text x="40" y="66">app + devops</text><text x="257" y="66">pytest / Vitest</text><text x="360" y="66">short SHA</text>
+        <text x="460" y="66">docker build</text><text x="560" y="66">Docker Hub</text><text x="660" y="66">git or helm</text>
+      </g>
+      <g stroke="#0f6e6e" stroke-width="1.6" fill="none" marker-end="url(#c)">
+        <path d="M80 50 L97 32"/><path d="M80 60 L97 78"/><path d="M195 30 L212 50"/><path d="M195 80 L212 62"/>
+        <path d="M300 55 H316"/><path d="M400 55 H416"/><path d="M500 55 H516"/><path d="M600 55 H616"/>
+      </g>
+      <text x="147" y="114" text-anchor="middle" fill="#5b6b73" font-size="9.5">parallel, in throwaway containers</text>
+    </svg>
+    <figcaption>Figure 2. Stages of both pipelines.</figcaption>
+  </figure>
+
+  <h2>Stages</h2>
+  <ol>
+    <li><b>Checkout</b>: the app repo (polled every 5 minutes) and a plain <code>git clone</code> of <code>tripsync-devops</code> for the chart. The clone is a shell command on purpose; see chapter 13.</li>
+    <li><b>Lint</b>, in parallel and in throwaway containers: <code>helm lint</code> of the chart twice (as EKS and as k3s, with <code>values-k3s.yaml</code>), plus flake8 (backend) or ESLint (frontend). Containers run as the Jenkins user (<code>-u $(id -u):$(id -g)</code>) so no root-owned files are left in the workspace.</li>
+    <li><b>Unit tests</b>. Backend: a throwaway <code>postgres:18-alpine</code> on a per-build Docker network, <code>flask db upgrade</code> (every migration runs against real Postgres), then pytest. Frontend: Vitest. Both publish JUnit XML to Jenkins.</li>
+    <li><b>Image tag</b> = the short Git SHA of that app repo, so every build gets a unique, traceable tag; <code>latest</code> is never used to deploy (Kubernetes would see no change and not pull).</li>
+    <li><b>Build and push</b> to Docker Hub (<code>swagarot/tripsync-backend</code>, <code>swagarot/tripsync-frontend</code>); <code>docker login --password-stdin</code>, <code>docker logout</code> in <code>post { always }</code>.</li>
+    <li><b>Deploy</b>, depending on <code>TARGET</code>:
+      <ul>
+        <li><code>k3s</code> (default, and every polling build): commit the new tag to git, so Argo CD deploys it (chapter 5).</li>
+        <li><code>eks</code>: write a separate kubeconfig with AWS credentials injected only in this branch, then <code>helm upgrade --install --atomic</code>.</li>
+      </ul>
+      Both run inside <code>lock('tripsync-release')</code>, so the two jobs never deploy at the same moment.</li>
+  </ol>
+
+  <h2>Why polling and not webhooks</h2>
+  <p>Jenkins is only reachable over Tailscale, so GitHub cannot call it. Polling every 5 minutes is the honest trade-off: no inbound exposure, at most a few minutes of delay.</p>
+
+  <h2>Credentials</h2>
+  <p>All in the Jenkins credential store and referenced by ID: a GitHub token (clone, and push the deploy commit), a Docker Hub access token, and the access key of a dedicated IAM user <code>jenkins-eks</code> that can only describe the cluster, plus a namespace-scoped EKS access entry. Secrets are used in single-quoted <code>sh</code> blocks so Groovy never interpolates them into logs, and the git token is passed through <code>gitUsernamePassword</code> (GIT_ASKPASS), never in a URL.</p>
+</section>
+
+<!-- ============================== 5 ARGO ============================== -->
+<section class="chapter">
+  <h1>5. Continuous delivery: GitOps with Argo CD</h1>
+  <p class="lead">Since 31 October 2026 the homelab cluster is deployed the GitOps way: git says what should run, and Argo CD, inside the cluster, makes it so.</p>
+
+  <h2>Push versus pull</h2>
+  <div class="cols">
+    <div class="warn"><b>Before: push</b>Jenkins ran <code>helm upgrade</code> against the cluster. It needed admin credentials to the cluster, and the cluster was “whatever the last upgrade left”. A manual <code>kubectl edit</code> stayed until someone noticed.</div>
+    <div class="note"><b>After: pull</b>Jenkins only writes the new image tag to git. Argo CD renders the chart from git every minute, compares it with the cluster and applies the difference. Jenkins no longer talks to the k3s API to deploy.</div>
+  </div>
+
+  <figure class="fig">
+    <svg viewBox="0 0 700 150" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11">
+      <defs><marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0f6e6e"/></marker></defs>
+      <g fill="#e3f0ef" stroke="#0f6e6e" stroke-width="1.3">
+        <rect x="0" y="50" width="110" height="50" rx="8"/><rect x="150" y="50" width="120" height="50" rx="8"/>
+        <rect x="310" y="50" width="160" height="50" rx="8"/><rect x="590" y="50" width="110" height="50" rx="8"/>
+      </g>
+      <rect x="510" y="50" width="45" height="50" rx="8" fill="#fbe9e3" stroke="#d9512c" stroke-width="1.3"/>
+      <g text-anchor="middle" font-weight="600">
+        <text x="55" y="72">app commit</text><text x="210" y="72">Jenkins</text><text x="390" y="72">tripsync-devops</text>
+        <text x="532" y="79">Argo</text><text x="645" y="72">k3s</text>
+      </g>
+      <g text-anchor="middle" fill="#5b6b73" font-size="9.5">
+        <text x="55" y="88">backend / frontend</text><text x="210" y="88">test · build · push</text>
+        <text x="390" y="88">values-k3s.yaml: tag</text><text x="645" y="88">rolling update</text>
+      </g>
+      <g stroke="#0f6e6e" stroke-width="1.6" fill="none" marker-end="url(#d)">
+        <path d="M110 75 H146"/><path d="M270 75 H306"/><path d="M506 75 H473" /><path d="M555 75 H586"/>
+      </g>
+      <text x="288" y="40" text-anchor="middle" fill="#5b6b73" font-size="9.5">commit “Deploy backend &lt;sha&gt;”</text>
+      <text x="490" y="122" text-anchor="middle" fill="#5b6b73" font-size="9.5">polls git every 60 s, compares, syncs</text>
+      <path d="M532 100 V112" stroke="#d9512c" stroke-width="1.2"/>
+    </svg>
+    <figcaption>Figure 3. A deploy is a commit. Argo CD pulls it; nothing pushes into the cluster.</figcaption>
+  </figure>
+
+  <h2>How it is set up</h2>
+  <ul>
+    <li>Installed by Terraform (<code>terraform/k3s/argocd.tf</code>): argo-cd chart 10.11.6 (Argo CD 3.5.6) without Dex or the notifications controller, and an <b>Application</b> <code>tripsync</code> via the argocd-apps chart.</li>
+    <li>The Application points at <code>k8s-helm/tripsync</code> on <code>main</code> with <code>values.yaml</code> + <b><code>values-k3s.yaml</code></b>. That second file holds the two image tags and is the only file Jenkins edits. Its git history is the deploy history, and a rollback is <code>git revert</code>.</li>
+    <li><b>Automated sync</b> with <b>prune</b> (things removed from git are deleted) and <b>self-heal</b> (manual changes in the cluster are undone). Up to 3 retries with backoff.</li>
+    <li>The devops repo is private; Argo CD reads it with a <b>read-only GitHub deploy key</b> kept only in a Kubernetes Secret created by hand.</li>
+    <li>The UI is private: a NodePort reachable over Tailscale, deliberately with no Ingress.</li>
+    <li>Jenkins edits the tag with <code>yq</code>, commits only if something changed, and on a refused push (the other job pushed first) fetches, redoes the change and retries.</li>
+  </ul>
+
+  <h2>What had to change in the chart</h2>
+  <p>Argo CD renders the Helm chart <b>without access to the cluster</b>, so Helm's <code>lookup</code> function, which asks the cluster for existing objects, always returns nothing. The chart used it in two places:</p>
+  <table>
+    <tr><th style="width:24%">Where</th><th>Problem under Argo CD</th><th style="width:34%">Fix</th></tr>
+    <tr><td>Generated secrets (DB password, JWT key, Garage keys)</td><td>New random values on every render: the backend would lose its database login and every user would be logged out.</td><td>The Application ignores the Secret's <code>/data</code> (<code>ignoreDifferences</code> + <code>RespectIgnoreDifferences</code>). Verified by hash against the running pods.</td></tr>
+    <tr><td>Backup CronJob</td><td>Rendered only if the <code>nfs-client</code> StorageClass existed, which <code>lookup</code> now always reported missing.</td><td>An explicit value <code>backup.enabled</code>: off by default (EKS), on in <code>values-k3s.yaml</code>.</td></tr>
+  </table>
+  <p>The Secret and the backup volume are also marked <code>Prune=false,Delete=false</code>, so Argo CD never deletes the data or the keys that unlock it.</p>
+
+  <h2>Taking over a live app with no downtime</h2>
+  <p>A backup was taken first. The rendered chart was then compared with the live release (identical apart from two annotations). The Application was created with auto-sync <b>off</b>, and its diff showed nothing to change or prune. Only then was auto-sync switched on. No pod restarted. End-to-end proof: a commit produced “Deploy frontend …” and “Deploy backend …” commits, and Argo CD rolled each out about 90 seconds later.</p>
+
+  <h2>Why these decisions</h2>
+  <p class="q">Why does Jenkins commit the tag instead of using Argo CD Image Updater?</p>
+  <p>One less component, and the commit records who deployed what, when.</p>
+  <p class="q">Why is EKS still push-based?</p>
+  <p>It is a throwaway cluster that lives for one test session. Installing Argo CD there each time adds nothing, so Jenkins keeps deploying it with <code>helm upgrade --atomic</code>.</p>
+  <p class="q">How is it monitored?</p>
+  <p>Argo CD's metrics go to Prometheus, with alerts for “out of sync for 15 min”, “unhealthy for 10 min”, “sync failed” and “metrics missing”. They arrive in Discord like every other alert.</p>
+</section>
+
+<!-- ============================== 6 K8S ============================== -->
+<section class="chapter">
+  <h1>6. Kubernetes and the Helm chart</h1>
+  <p>One chart, <code>k8s-helm/tripsync</code>, describes the whole app on both clusters. Cluster differences live in values (storage class, image tags, backup on/off), never in separate copies of the chart.</p>
+
+  <table>
+    <tr><th style="width:30%">Template</th><th>What it creates and why</th></tr>
+    <tr><td>backend-deployment</td><td>Backend Deployment. A <code>migrate</code> init container runs <code>flask db upgrade</code> before the app starts, and a <code>storage-init</code> init container bootstraps Garage (layout, bucket, key; every step repeatable). Runs as non-root.</td></tr>
+    <tr><td>frontend-deployment</td><td>nginx serving the built PWA.</td></tr>
+    <tr><td>postgres</td><td>A <b>StatefulSet</b> with a headless Service and its own volume (2Gi).</td></tr>
+    <tr><td>garage</td><td>Photo object storage (S3 API), a 1-node StatefulSet with a 10Gi volume.</td></tr>
+    <tr><td>secret</td><td>Postgres password, JWT key and Garage keys, generated once and never in git.</td></tr>
+    <tr><td>ingress</td><td><b>Two</b> Ingresses: <code>/api(/|$)(.*)</code> with a rewrite to the backend, and plain <code>/</code> to the frontend.</td></tr>
+    <tr><td>backup</td><td>Nightly CronJob plus its NFS volume (chapter 8). Enabled per cluster by <code>backup.enabled</code>.</td></tr>
+    <tr><td>servicemonitor, prometheus-rules, grafana-dashboard</td><td>Scrape config, alert rules and a dashboard shipped with the app. They render only if the cluster has the Prometheus Operator, so EKS still installs.</td></tr>
+  </table>
+
+  <h2>Decisions worth defending</h2>
+  <p class="q">Why a StatefulSet for Postgres?</p>
+  <p>It gives a stable identity and a volume that outlives the release. Above all, it never runs two copies at once during an update; a Deployment's rolling update would briefly run two Postgres processes on the same files.</p>
+  <p class="q">Why two Ingresses?</p>
+  <p>ingress-nginx annotations apply to a whole Ingress object. With one combined Ingress, the <code>/api</code> rewrite also rewrote requests for JavaScript files, so nginx answered them with <code>index.html</code>: a white screen and a MIME error.</p>
+  <p class="q">Liveness versus readiness?</p>
+  <p>Liveness (<code>/health/live</code>) only asks whether the process is stuck; it must not check the database, or a database outage would restart every pod in a loop. Readiness (<code>/health/ready</code>) runs <code>SELECT 1</code> and only takes the pod out of the Service. Garage's readiness is a TCP check, because its <code>/health</code> fails until it has been set up, and setup goes through its Service: a deadlock otherwise.</p>
+  <p class="q">Why migrations in an init container?</p>
+  <p>The new schema is in place before new code starts. If a migration fails, the new pod never becomes ready and the old one keeps serving. During a rolling update old and new code run side by side, so migrations only add, with new columns nullable or defaulted (expand/contract). An advisory lock stops two pods from migrating at the same time.</p>
+  <p class="q">Why generate secrets in the chart?</p>
+  <p>Nobody types them and they never appear in git. They are generated once and then kept: Postgres only reads its password on first start, and a new JWT key would log everyone out. The Secret has <code>helm.sh/resource-policy: keep</code>, so uninstalling never separates it from the data it unlocks. Secrets from outside (tunnel token, routing API key, Discord webhook, Argo CD deploy key) are created by hand with kubectl.</p>
+
+  <h2>Deployment, ReplicaSet, Pod</h2>
+  <p>A Deployment is the desired state (“1 copy of backend:10cd680”). For each version of its pod template it creates a ReplicaSet, which keeps N identical pods running. A new image tag means a new ReplicaSet: the Deployment scales it up and the old one down to zero, and readiness probes keep traffic away from pods that aren't ready yet. We keep the last 3 ReplicaSets (<code>revisionHistoryLimit: 3</code>). With GitOps the real rollback is <code>git revert</code>, since self-heal would undo a manual <code>kubectl rollout undo</code>.</p>
+</section>
+
+<!-- ============================== 7 TERRAFORM ============================== -->
+<section class="chapter">
+  <h1>7. Infrastructure as code: Terraform</h1>
+  <p>Two root modules, each with remote state in S3, locked with S3's native lock file (<code>use_lockfile</code>, Terraform ≥ 1.10), which replaced the deprecated DynamoDB table. The lock was proven with two concurrent plans: the second got <i>412 Precondition Failed</i>.</p>
+
+  <h2>terraform/k3s: the homelab platform</h2>
+  <table>
+    <tr><th style="width:24%">File</th><th>Manages</th></tr>
+    <tr><td>main.tf</td><td>The <code>tripsync</code> namespace. Terraform owns it, so the chart never creates it.</td></tr>
+    <tr><td>longhorn.tf</td><td>Longhorn 1.12.1, replicated block storage (2 replicas).</td></tr>
+    <tr><td>monitoring.tf</td><td>kube-prometheus-stack (Prometheus, Alertmanager, Grafana, node exporter, kube-state-metrics) and the Longhorn alerts.</td></tr>
+    <tr><td>logging.tf</td><td>Loki (single binary, 7-day retention) and Grafana Alloy as a DaemonSet.</td></tr>
+    <tr><td>tunnel.tf</td><td>cloudflared, 2 replicas on different workers, read-only root filesystem.</td></tr>
+    <tr><td>argocd.tf</td><td>Argo CD and the <code>tripsync</code> Application.</td></tr>
+  </table>
+  <p>Helm charts are installed by <code>helm_release</code> with values kept as plain YAML files (<code>monitoring/</code>, <code>argocd/</code>), so they can be read and diffed like any other config. Chart versions are pinned.</p>
+
+  <h2>terraform/aws: VPC + EKS</h2>
+  <figure class="fig">
+    <svg style="width:88%" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11">
+      <defs><marker id="e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0f6e6e"/></marker></defs>
+      <rect x="10" y="10" width="680" height="190" rx="12" fill="#f7fafa" stroke="#9fbcbc" stroke-dasharray="5 4"/>
+      <text x="25" y="30" fill="#5b6b73" font-weight="600">VPC (own module) · eu-central-1</text>
+      <g fill="#e3f0ef" stroke="#0f6e6e" stroke-width="1.3">
+        <rect x="30" y="45" width="300" height="60" rx="8"/><rect x="370" y="45" width="300" height="60" rx="8"/>
+        <rect x="30" y="125" width="300" height="60" rx="8"/>
+      </g>
+      <rect x="370" y="125" width="300" height="60" rx="8" fill="#fbe9e3" stroke="#d9512c" stroke-width="1.3"/>
+      <g font-weight="600"><text x="45" y="65">Public subnet A</text><text x="385" y="65">Public subnet B</text><text x="45" y="145">Private subnet (zone A)</text><text x="385" y="145">EKS control plane (managed)</text></g>
+      <g fill="#5b6b73" font-size="9.5">
+        <text x="45" y="82">Classic ELB (from ingress-nginx) · NAT gateway + EIP</text><text x="45" y="96">route 0.0.0.0/0 → internet gateway</text>
+        <text x="385" y="82">Classic ELB · second AZ</text><text x="385" y="96">(EKS needs subnets in 2 AZs)</text>
+        <text x="45" y="162">worker node c7i-flex.large · no public IP</text><text x="45" y="176">route 0.0.0.0/0 → NAT (outbound only)</text>
+        <text x="385" y="162">K8s 1.37 · EBS CSI add-on · gp3 class</text><text x="385" y="176">Jenkins access entry: edit on tripsync only</text>
+      </g>
+    </svg>
+    <figcaption>Figure 4. The AWS environment: 2 public subnets and 1 private subnet, cheaper than the usual 2 + 2.</figcaption>
+  </figure>
+  <ul>
+    <li><b>Own VPC module</b>, written step by step instead of the community module: VPC with DNS support and hostnames, internet gateway, 2 public subnets, 1 private subnet, NAT gateway with an Elastic IP, route tables and associations, and subnet tags for load balancers. NAT can be switched off with <code>count</code>.</li>
+    <li><b>EKS</b> through the official module: nodes in the private subnet; ingress-nginx, the namespace, the EBS CSI driver and an encrypted gp3 StorageClass all in Terraform, so a fresh cluster is ready for the first pipeline run with no manual steps. The account is on the Free Plan, so the node is a free-tier-eligible <code>c7i-flex.large</code> (<code>t3.medium</code> is refused).</li>
+    <li><b>Least privilege for Jenkins</b>: an IAM user that can only describe the cluster, plus an EKS access entry limited to edit rights in the <code>tripsync</code> namespace. The user and its key are made by hand, so the secret never lands in Terraform state.</li>
+  </ul>
+  <h3>Proven, clean slate both times</h3>
+  <p><b>10 Oct:</b> apply (54 resources), both pipelines with <code>TARGET=eks</code>, app served through the ELB, destroy with no leftovers. <b>28 Oct</b> (after Postgres/Garage were added): apply (57 resources), chart installed in 38 s, PVCs bound on encrypted EBS, all migrations on an empty database, a full smoke test through the ELB. Teardown removed the volumes <i>before</i> destroy so no billed disk was orphaned. AWS was verified empty afterwards: 0 volumes, load balancers, EIPs and instances.</p>
+</section>
+
+<!-- ============================== 8 STORAGE ============================== -->
+<section class="follow">
+  <h1>8. Storage, data and backups</h1>
+
+  <h2>Longhorn: replicated volumes</h2>
+  <p>Longhorn turns the workers' disks into Kubernetes volumes. Each volume has a full copy on both workers, and every write goes to both before it is confirmed. If a worker dies, the pod restarts on the other worker with the surviving copy (tested: Prometheus and Alertmanager were back in under 50 seconds with their data intact). Prometheus, Alertmanager, Loki, Postgres and Garage all use it.</p>
+  <p class="q">Why not NFS for everything?</p>
+  <p>Prometheus documents NFS as unsupported (corruption risk), and databases want a block device with one writer. NFS is used for what it is good at: being the backup target.</p>
+
+  <div class="warn"><b>A replica is not a backup</b>Replicas protect against a dead disk or node. A mistake (a bad DELETE, a broken migration, a Longhorn bug) hits both copies instantly. Only a backup undoes that.</div>
+
+  <h2>Nightly backup</h2>
+  <ul>
+    <li>A CronJob at 03:30 (Asia/Jerusalem) with <code>concurrencyPolicy: Forbid</code>.</li>
+    <li>An init container runs <code>pg_dump -Fc</code> (kept 14 days), then <code>rclone sync</code> mirrors the photo bucket, keeping deleted photos for 30 days in a dated folder.</li>
+    <li>Target: an NFS volume (30Gi) marked to survive uninstall. A <code>LAST_RUN.txt</code> marker and the alert <i>TripsyncBackupMissing</i> (&gt;26 h since the last success).</li>
+    <li><b>Restore tested, not assumed</b>: the dump was restored into a scratch database with identical row counts and migration version. The restore guide is <code>docs/backup-restore.md</code>.</li>
+  </ul>
+
+  <h2>Known weak spots, chosen with open eyes</h2>
+  <ul>
+    <li>Shared fate: every stateful service sits on Longhorn. Mitigated by alerts on degraded or faulted volumes, node health and disk usage, and by the backup living outside Longhorn.</li>
+    <li>Only 2 storage nodes: while one is down, every volume has one copy. That is exactly what <i>LonghornVolumeDegraded</i> reports.</li>
+    <li>The NFS server is in the same building. Offsite copies (Cloudflare R2) are the next step.</li>
+    <li>Garage runs as one node: tests showed 2 nodes refuse writes when one is down; real write availability needs 3. Postgres is the availability limit anyway.</li>
+  </ul>
+</section>
+
+<!-- ============================== 9 NETWORK ============================== -->
+<section class="chapter">
+  <h1>9. Networking and exposure</h1>
+  <h2>Public: Cloudflare Tunnel</h2>
+  <p>cloudflared opens an <b>outbound</b> connection to Cloudflare; visitors connect to Cloudflare over HTTPS and requests come back down that connection to ingress-nginx. No router ports are open, no public IP is needed, and HTTPS (required for the service worker and app install) comes for free. Two replicas on different workers connect to two Cloudflare edges.</p>
+  <p>Because every request now arrives from a cloudflared pod, the backend's rate limits key on <code>CF-Connecting-IP</code>, which Cloudflare sets and a client cannot forge through the tunnel.</p>
+
+  <h2>Private: Tailscale + NodePorts</h2>
+  <p>Admin tools have no Ingress at all. Grafana (port 30300) and Argo CD (port 30443) are NodePorts, reachable on the nodes' LAN and Tailscale addresses but <b>not</b> through the tunnel, which only forwards to ingress-nginx. Jenkins and kubectl are reachable over Tailscale only.</p>
+
+  <div class="warn"><b>Found and closed: an accidental exposure</b>Grafana used to be served at <code>/grafana</code> through a host-less Ingress. A host-less Ingress matches <i>every</i> hostname, including the public tunnel hostname, so Grafana's login page was on the internet. The same mechanism had earlier exposed the backend's <code>/api/metrics</code>. Both are closed: the API Ingress regex excludes <code>metrics</code>, and Grafana moved to a private NodePort. Lesson: with a tunnel in front, every Ingress is public unless proven otherwise.</div>
+
+  <h2>Caching gotcha</h2>
+  <p>nginx sends <code>no-cache</code> for <code>index.html</code>, <code>sw.js</code> and the manifest, and long-lived immutable caching for hashed assets. Cloudflare's default browser cache TTL (4 h) overrode <code>no-cache</code> on <code>sw.js</code>, so app updates were delayed. It is now set to “Respect Existing Headers”.</p>
+</section>
+
+<!-- ============================== 10 OBSERVABILITY ============================== -->
+<section class="chapter">
+  <h1>10. Observability: metrics, logs and alerts</h1>
+  <p>Monitoring runs on the homelab only. EKS is ephemeral and its 4 GiB node is too small; Amazon Managed Prometheus is noted as an option.</p>
+
+  <div class="cols">
+    <div>
+      <h3>Metrics</h3>
+      <ul>
+        <li>kube-prometheus-stack: Prometheus (7 days / 6 GB, Longhorn volume), Alertmanager, Grafana, about 22 scrape targets.</li>
+        <li>Backend metrics labelled by <b>route template</b> (<code>/trips/&lt;uuid:trip_id&gt;</code>), not by URL; otherwise every trip ID would be a new time series forever.</li>
+        <li>Counters for outside-API calls versus cache hits.</li>
+        <li>Grafana has no volume: dashboards and data sources are code (ConfigMaps), so it can be recreated at any time.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Logs</h3>
+      <ul>
+        <li>Grafana Alloy on every node tails the pod logs, labels them (namespace, pod, container, app, node) and ships them to Loki.</li>
+        <li>Loki single binary, 7-day retention, on Longhorn.</li>
+        <li>Alloy instead of Promtail, which is deprecated.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Alerts (on top of the stack's ~130 built-in rules)</h2>
+  <table>
+    <tr><th style="width:34%">Alert</th><th>Fires when</th></tr>
+    <tr><td>TripsyncBackendDown / FrontendDown</td><td>No backend target, or 0 available frontend pods, for 2 min (critical)</td></tr>
+    <tr><td>TripsyncHighErrorRate / SlowResponses</td><td>&gt;5% 5xx for 5 min; p95 &gt; 1 s for 10 min</td></tr>
+    <tr><td>TripsyncDatabaseDown / PhotoStorageDown</td><td>Postgres or Garage not available</td></tr>
+    <tr><td>TripsyncBackupMissing</td><td>No successful backup for 26 h</td></tr>
+    <tr><td>Longhorn: VolumeDegraded / Faulted / NodeNotReady / DiskFilling / MetricsMissing</td><td>A volume down to one copy or none; a storage node down; disk &gt; 70% (Longhorn stops at 75%); no Longhorn metrics</td></tr>
+    <tr><td>ArgoCD: AppOutOfSync / AppUnhealthy / SyncFailed / MetricsMissing</td><td>Cluster differs from git for 15 min; app unhealthy for 10 min; a failed sync</td></tr>
+  </table>
+  <p>Every alert except the always-on Watchdog goes to <b>Discord</b>, grouped by namespace and alert, with “resolved” messages. The webhook URL lives only in a Kubernetes Secret.</p>
+  <p class="q">Is it tested?</p>
+  <p>Yes. The backend was scaled to 0: the alert was active in Alertmanager 3 minutes later (the target disappearing plus the 2-minute <code>for:</code>) and arrived in Discord. Scaled back up, it cleared, and the resolved message followed at the next group interval.</p>
+  <p class="q">Why is every “…MetricsMissing” alert there?</p>
+  <p>An alert on a metric that no longer exists stays silent forever. <code>absent()</code> turns silence into a signal.</p>
+</section>
+
+<!-- ============================== 11 SECURITY ============================== -->
+<section class="chapter">
+  <h1>11. Security</h1>
+  <table>
+    <tr><th style="width:26%">Area</th><th>Measures</th></tr>
+    <tr><td>Secrets</td><td>None in git. Generated by the chart and kept, or created by hand with kubectl. Jenkins credentials referenced by ID; the git token goes through GIT_ASKPASS; Argo CD has a read-only deploy key.</td></tr>
+    <tr><td>Exposure</td><td>Only the app is public, through the outbound tunnel. Admin UIs are on Tailscale only, and <code>/metrics</code> is excluded from the public Ingress.</td></tr>
+    <tr><td>Least privilege</td><td>Separate IAM user for Jenkins (describe cluster only) plus a namespace-scoped EKS access entry; Argo CD only reads git.</td></tr>
+    <tr><td>Containers</td><td>Non-root users (<code>runAsNonRoot</code>); cloudflared with a read-only root filesystem; pinned image versions.</td></tr>
+    <tr><td>Authentication</td><td>scrypt hashes; the same response time for an unknown email and a wrong password; rate limits on login, sign-up, search and uploads.</td></tr>
+    <tr><td>Authorisation</td><td>One module answers “can this user see this trip, with which role”. Not on the trip = 404 (IDs don't leak); a viewer trying to edit = 403. A test calls every endpoint as an outsider and as a viewer.</td></tr>
+    <tr><td>Uploads</td><td>Images must decode, are re-encoded with metadata and GPS stripped, size limits apply, and they are served by signed, expiring URLs.</td></tr>
+    <tr><td>SSRF</td><td>The one endpoint that fetches a URL is locked to Wikimedia: allow-listed prefix, redirects checked by hand, image types only, 5 MB cap. Tests include the cloud metadata address.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 12 TESTING ============================== -->
+<section class="chapter">
+  <h1>12. Testing</h1>
+  <div class="stats">
+    <div class="stat"><b>225</b><span>backend tests (pytest)</span></div>
+    <div class="stat"><b>66</b><span>frontend tests (Vitest)</span></div>
+    <div class="stat"><b>2</b><span>EKS clean-slate runs</span></div>
+    <div class="stat"><b>1</b><span>real restore, row counts matched</span></div>
+  </div>
+  <ul>
+    <li><b>Real database in CI.</b> Backend tests run against Postgres 18 after all migrations, the same schema as production, not SQLite.</li>
+    <li><b>Isolation tests.</b> A second user calls every ID-taking endpoint on the first user's data and must get 404; viewers must get 403 on every write.</li>
+    <li><b>Query-count test.</b> Guards against N+1 queries: a trip page made 40 SQL queries for 5 days × 6 stops; it is now constant (≤ 10) whatever the trip's size.</li>
+    <li><b>Frontend logic.</b> The offline queue against a fake server, conflict handling, route caching, weather rules, expense splitting to the cent.</li>
+    <li><b>End to end</b> (Playwright on the local compose stack): three users, invite while logged out, join, split expenses, a viewer on a phone, removal, export offline. Offline reload and sync were checked against the public URL.</li>
+    <li><b>Infrastructure tests.</b> A Longhorn failover (cordon a worker, delete pods), an alert fired end to end, a backup restored into a scratch database, two Terraform plans at once to prove the state lock.</li>
+  </ul>
+</section>
+
+<!-- ============================== 13 INCIDENTS ============================== -->
+<section class="chapter">
+  <h1>13. Incidents and lessons learned</h1>
+  <p class="lead">The most useful part of running something for real: things went wrong, monitoring or process caught them, and each left a lesson.</p>
+
+  <h3>1. Eleven days of “failed” backups</h3>
+  <p>From 17 to 28 October every nightly backup was marked failed. The cleanup step (<code>rclone delete --rmdirs</code>) exited with an error whenever a folder still held recent photos. The dumps and the photo mirror had been written every night; only the last step failed. Monitoring worked: <i>TripsyncBackupMissing</i> and <i>KubeJobFailed</i> sent 60 Discord messages, all delivered. Nobody read them. The fix was reproduced with the same rclone image (old command exits 1, new exits 0) and verified with a manual run.</p>
+  <p><b>Lessons:</b> test the cleanup path, not only the happy path; an alert needs an owner who reads it.</p>
+
+  <h3>2. The backup CronJob deleted during the Argo CD switch</h3>
+  <p>The chart change (backup now off by default) was pushed before the Jenkinsfile change. Both Jenkins jobs then built and ran the <i>old</i> pipeline (<code>helm upgrade</code>) with the <i>new</i> chart, and Helm deleted the CronJob. The data survived because the volume is marked <code>keep</code>, and Argo CD's first sync recreated the CronJob.</p>
+  <p><b>Lesson:</b> push the pipeline change before, or together with, the chart change it depends on.</p>
+
+  <h3>3. Jenkins building on the wrong repo</h3>
+  <p>Both jobs started on every commit to <code>tripsync-devops</code>, although that checkout had <code>poll: false</code> and the polling logs showed only each job's own repo. The proof came from Docker Hub: images were re-pushed about 5 minutes (one polling interval) after each devops commit. With GitOps every deploy commit then rebuilt both apps. Fix: clone the devops repo with a plain shell <code>git clone</code>, since Jenkins only polls repos checked out by its git steps. Verified: no rebuilds afterwards.</p>
+
+  <h3>4. Grafana on the public internet</h3>
+  <p>See chapter 9: a host-less Ingress matched the public hostname. It was found during the Argo CD work and closed by moving the admin UIs to private NodePorts.</p>
+
+  <h3>5. Smaller ones, each a line in the runbook</h3>
+  <ul>
+    <li>A combined Ingress with a rewrite served HTML for JS files (white screen), hence the two Ingresses.</li>
+    <li>Grafana's 384 Mi memory limit was too low (it sat at ~372 Mi, health timed out, 503s), so it was raised to 768 Mi.</li>
+    <li>Longhorn mounts failed while <code>multipathd</code> grabbed the iSCSI devices; it is disabled on the workers.</li>
+    <li>The tunnel token Secret held literal quotes (Windows <code>cmd</code> keeps <code>'</code>): “token is not valid”.</li>
+    <li>A deploy ran the new chart with an old backend image; the migrate init container failed and <code>--atomic</code> rolled back. Hence the deploy order: chart, then backend, then frontend.</li>
+    <li>Garage's HTTP health check deadlocked its own setup, so readiness is a TCP check.</li>
+  </ul>
+</section>
+
+<!-- ============================== 14 TIMELINE ============================== -->
+<section class="chapter">
+  <h1>14. Project timeline</h1>
+  <table>
+    <tr><th style="width:20%">When</th><th>Milestone</th></tr>
+    <tr><td>Weeks 1–2</td><td>Flask + React app, Dockerfiles, docker-compose; homelab k3s with ingress-nginx; first Helm chart (deployments, services, ingress, probes, limits); Terraform for the namespace; Jenkins controller and agent; one combined pipeline with SHA tags.</td></tr>
+    <tr><td>Week 3</td><td>Split into backend and frontend repos (history kept); a Jenkinsfile and job per repo, triggered by SCM polling; shared deploy lock; old job and repo retired.</td></tr>
+    <tr><td>Week 4 (10 Oct)</td><td>AWS with Terraform: own VPC module, EKS, ingress-nginx; both pipelines deploy to EKS through <code>TARGET</code>; clean-slate apply → deploy → destroy.</td></tr>
+    <tr><td>Week 5 (12–14 Oct)</td><td>Longhorn; Prometheus, Alertmanager, Grafana; Loki + Alloy; custom alerts and dashboard; Discord; failover and alert tests.</td></tr>
+    <tr><td>Weeks 6–7 (16–17 Oct)</td><td>Multi-account backend on Postgres with migrations; CI tests on real Postgres; offline-first PWA; Cloudflare Tunnel, live in public; Garage photo storage; nightly backups with a tested restore; maps, routes, transit, weather, expenses.</td></tr>
+    <tr><td>Sprint (28 Oct)</td><td>Shared trips and expense splitting; PDF / keepsake / Google Maps export; backup incident fixed; Terraform S3-native state locking; second full EKS run.</td></tr>
+    <tr><td>31 Oct</td><td>GitOps with Argo CD; admin UIs made private; Jenkins polling fix; ReplicaSet history trimmed.</td></tr>
+    <tr><td>Nov</td><td>Documentation, presentation, final UI polish.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 15 FUTURE ============================== -->
+<section class="follow">
+  <h1>15. Limitations and future work</h1>
+  <table>
+    <tr><th style="width:34%">Limitation</th><th>Next step</th></tr>
+    <tr><td>Backups are in the same building</td><td>Offsite copy to Cloudflare R2 (10 GB free).</td></tr>
+    <tr><td>Postgres has one instance; failover takes about a minute and depends on Longhorn</td><td>Replication independent of Longhorn, e.g. CloudNativePG with 2 instances on local disks.</td></tr>
+    <tr><td>Only 2 storage nodes</td><td>A third node would allow 3 replicas and a 3-node Garage with real write availability.</td></tr>
+    <tr><td>ingress-nginx is retired (last release March 2026)</td><td>Move to the Gateway API with a maintained controller.</td></tr>
+    <tr><td>EKS has no monitoring and is push-deployed</td><td>Amazon Managed Prometheus for app metrics; Argo CD there only if EKS became long-lived.</td></tr>
+    <tr><td>Images on Docker Hub; EKS pulls through NAT</td><td>ECR for the AWS path.</td></tr>
+    <tr><td>In-memory rate limits are per pod</td><td>A shared store (Redis) if the backend scales out.</td></tr>
+  </table>
+</section>
+
+<!-- ============================== APPENDIX ============================== -->
+<section class="chapter">
+  <h1>Appendix A. Versions and repository layout</h1>
+  <div class="cols" style="grid-template-columns: 1fr 1.15fr">
+    <table>
+      <tr><th>Component</th><th>Version</th></tr>
+      <tr><td>Argo CD (chart)</td><td>3.5.6 (10.11.6)</td></tr>
+      <tr><td>kube-prometheus-stack</td><td>92.3.0</td></tr>
+      <tr><td>Loki (chart) / Alloy chart</td><td>3.6 (7.3.0) / 1.13.1</td></tr>
+      <tr><td>Longhorn</td><td>1.12.1</td></tr>
+      <tr><td>ingress-nginx chart</td><td>4.15.1</td></tr>
+      <tr><td>cloudflared</td><td>2026.10.1</td></tr>
+      <tr><td>PostgreSQL</td><td>18.6</td></tr>
+      <tr><td>Garage</td><td>v2.4.1</td></tr>
+      <tr><td>EKS Kubernetes</td><td>1.37</td></tr>
+      <tr><td>Node (frontend build)</td><td>24</td></tr>
+      <tr><td>Python (backend)</td><td>3.11</td></tr>
+    </table>
+<pre>tripsync-devops/
+├── k8s-helm/tripsync/   Helm chart
+│   ├── values.yaml       defaults (EKS)
+│   ├── values-k3s.yaml   homelab: image tags
+│   │                     (edited by Jenkins)
+│   ├── templates/        Kubernetes objects
+│   └── dashboards/       Grafana JSON
+├── argocd/              Argo CD, the app
+├── monitoring/          stack, Loki, Alloy,
+│                        Longhorn alerts
+├── terraform/
+│   ├── k3s/             homelab platform
+│   └── aws/             VPC module + EKS
+├── compose/, docker-compose.yml
+├── docs/                backup & restore
+└── CLAUDE.md            project context
+
+tripsync-backend/   Flask API, tests,
+                    Dockerfile, Jenkinsfile
+tripsync-frontend/  React PWA, tests, nginx,
+                    Dockerfile, Jenkinsfile</pre>
+  </div>
+</section>
+
+</body>
+</html>
