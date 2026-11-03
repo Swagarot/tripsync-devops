@@ -722,9 +722,27 @@ screen (feedback addressed above).
 **Open items (updated 2026-10-31; features are complete):**
 
 **WHAT'S LEFT, in order (2026-10-31):**
-1. **Finish the walkthrough** (Roye, with Claude): the rest of "explanation
-   pending", now including the Argo CD sprint (GitOps, push vs pull, the
-   Secret/`lookup` problem, the backup-CronJob incident, ReplicaSets).
+1. **Walkthrough, from the start (Roye's decision 2026-11-03).** Roye let
+   Claude build more and more on its own and lost track of parts, so this is
+   not "finish the pending bits" but a full pass over EVERYTHING. How: Claude
+   starts small (basics Roye surely knows) and builds up step by step, one
+   topic at a time, checking understanding before moving on (ask Roye to
+   explain it back / a defend-it question), until the whole project is
+   covered. Don't skip a topic because it was "explained" earlier. Suggested
+   order (small -> big): (1) the app and the 3 repos; (2) Docker images +
+   compose; (3) Kubernetes basics in our cluster: Pod / ReplicaSet /
+   Deployment / Service / Ingress (two Ingresses), probes; (4) the Helm chart
+   template by template (values, `lookup`, generated Secret, init containers,
+   StatefulSets for Postgres + Garage); (5) Jenkins pipelines stage by stage;
+   (6) GitOps with Argo CD (push vs pull, values-k3s.yaml, prune/self-heal,
+   ignoreDifferences, the takeover); (7) networking: Cloudflare Tunnel,
+   Tailscale, NodePorts, the Grafana exposure; (8) storage: Longhorn,
+   replica vs backup, the backup CronJob + restore; (9) observability:
+   Prometheus, ServiceMonitor, rules, Alertmanager -> Discord, Loki/Alloy;
+   (10) Terraform k3s + AWS (VPC module, EKS, IAM/access entry, state lock);
+   (11) security + tests (access.py 404 vs 403, isolation tests); (12) the
+   incidents. Use `docs/final/` (the PDF + deck) as the map: each chapter is a
+   session-sized chunk, and fix the doc text as we go. Not started yet.
 2. **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
    case we'll edit them"), in `docs/final/`: `documentation.html` -> printed to
    `TripSync-Documentation.pdf` with headless Chrome (command at the top of the
