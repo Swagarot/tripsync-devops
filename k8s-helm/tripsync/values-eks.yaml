@@ -1,0 +1,21 @@
+# Overrides for AWS EKS (the Jenkinsfiles' TARGET=eks branch passes this file).
+# values-k3s.yaml is the homelab's equivalent.
+
+postgres:
+  # EBS gp3 volume (StorageClass made by terraform/aws/cluster.tf).
+  storageClassName: gp3
+
+# Photos in S3 instead of Garage (terraform/aws/photos.tf). The bucket name
+# contains the account id, so Jenkins passes it: --set s3.bucket=...
+garage:
+  enabled: false
+s3:
+  enabled: true
+  region: eu-central-1
+
+# The ORS key from the homelab's Vault, over Tailscale (terraform/aws/vault.tf),
+# so routes work on EKS too. Rendered only if the operator is installed there
+# (TF var vault_enabled); without it, straight lines as before. No tunnel here.
+externalSecrets:
+  enabled: true
+  cloudflared: false

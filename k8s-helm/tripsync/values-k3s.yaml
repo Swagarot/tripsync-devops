@@ -18,3 +18,7 @@ frontend:
 # Nightly backup to the NFS server (only the homelab has one).
 backup:
   enabled: true
+# Hand-made Secrets (openrouteservice, cloudflared-token) come from Vault
+# (terraform/vault). Rendered only once the External Secrets Operator exists.
+externalSecrets:
+  enabled: true

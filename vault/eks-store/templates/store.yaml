@@ -1,0 +1,49 @@
+{{- /*
+A small local chart instead of kubernetes_manifest in Terraform: the
+ClusterSecretStore's CRD only exists after the operator is installed in the
+same apply, and Helm (unlike kubernetes_manifest) doesn't need it at plan time.
+*/ -}}
+# Egress to the homelab over Tailscale: the Tailscale operator sees this
+# ExternalName Service, starts a proxy pod that is a device on the tailnet,
+# and points the Service at it. In-cluster traffic to vault-homelab:<port>
+# comes out at the homelab node's Vault NodePort, same port number (the proxy
+# keeps ports). WireGuard-encrypted all the way.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-homelab
+  namespace: external-secrets
+  annotations:
+    tailscale.com/tailnet-fqdn: {{ required "vaultTailnetHost" .Values.vaultTailnetHost | quote }}
+spec:
+  type: ExternalName
+  externalName: placeholder   # the operator replaces this
+  ports:
+    - name: vault
+      port: {{ .Values.vaultNodePort }}
+      protocol: TCP
+---
+# Logs in with the operator's own ServiceAccount token (audience "vault").
+# Vault checks it against this cluster's public OIDC keys (auth mount
+# jwt-eks, terraform/vault-config/eks.tf), so Vault never needs credentials
+# for EKS's API. Policy eso-eks: only the ORS key.
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: vault
+spec:
+  provider:
+    vault:
+      server: http://vault-homelab.external-secrets.svc:{{ .Values.vaultNodePort }}
+      path: secret
+      version: v2
+      auth:
+        jwt:
+          path: jwt-eks
+          role: eso-eks
+          kubernetesServiceAccountToken:
+            serviceAccountRef:
+              name: external-secrets
+              namespace: external-secrets
+            audiences:
+              - vault

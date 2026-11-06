@@ -1,0 +1,5 @@
+apiVersion: v2
+name: eks-store
+description: EKS side of the homelab Vault - a Tailscale egress Service to it and the ClusterSecretStore that uses it.
+type: application
+version: 0.1.0

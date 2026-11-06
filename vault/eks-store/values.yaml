@@ -1,0 +1,3 @@
+# Set by terraform/aws/vault.tf.
+vaultTailnetHost: ""   # MagicDNS name of a homelab node, e.g. <node>.<tailnet>.ts.net
+vaultNodePort: 30820

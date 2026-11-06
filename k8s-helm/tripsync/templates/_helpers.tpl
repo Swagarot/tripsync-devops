@@ -29,6 +29,9 @@ so the two can't drift apart.
       name: openrouteservice
       key: api-key
       optional: true
+{{- if and .Values.garage.enabled .Values.s3.enabled }}
+{{- fail "garage.enabled and s3.enabled: pick one photo store" }}
+{{- end }}
 {{- if .Values.garage.enabled }}
 # Photo storage (Garage, S3 API). Without these the backend turns photo
 # uploads off and everything else keeps working.
@@ -55,5 +58,12 @@ so the two can't drift apart.
     secretKeyRef:
       name: tripsync-secrets
       key: garage-admin-token
+{{- else if .Values.s3.enabled }}
+# Photo storage in AWS S3 (EKS). No endpoint and no key: boto3 gets the
+# pod's IAM role from EKS Pod Identity.
+- name: S3_BUCKET
+  value: {{ required "s3.bucket is required when s3.enabled" .Values.s3.bucket | quote }}
+- name: S3_REGION
+  value: {{ required "s3.region is required when s3.enabled" .Values.s3.region | quote }}
 {{- end }}
 {{- end }}

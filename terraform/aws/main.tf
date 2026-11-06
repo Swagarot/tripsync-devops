@@ -76,6 +76,9 @@ module "eks" {
   # installs add-ons after the node group, so the driver's pods can schedule.
   cluster_addons = {
     aws-ebs-csi-driver = {}
+    # Hands pods the IAM role linked to their ServiceAccount (photos.tf):
+    # short-lived credentials, no access key stored in the cluster.
+    eks-pod-identity-agent = {}
   }
   tags = {
     Project = "TripSync"

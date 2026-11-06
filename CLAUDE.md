@@ -721,6 +721,88 @@ screen (feedback addressed above).
 
 **Open items (updated 2026-10-31; features are complete):**
 
+**SPRINT IN PROGRESS (decided by Roye 2026-11-06, before walkthrough topic 2):**
+the project is meant to be hybrid, so EKS gets the same features as k3s, plus
+token rotation. Order: build all, test locally, then ONE EKS session together
+(~$0.25-0.30/h, destroy after), then the walkthrough resumes at topic 2 and
+covers these too. Every AWS change goes into walkthrough.md's AWS log.
+- (a) **Token rotation, per device** (backend + frontend): `sessions` table,
+  one row per device; every online app start (and coming back online) swaps
+  the device's token for a new 7-day one; the previous token stays valid for
+  a short grace (parallel requests / tabs); presenting any older token =
+  theft -> that session is revoked. Logout revokes the session; "log out
+  everywhere" revokes all. Tokens from before the change (no `sid`) keep
+  working until they expire, and refresh turns them into a session.
+  **Built + tested locally 2026-11-06, NOT pushed yet** (push = Jenkins
+  deploys to live k3s; push the backend first, its migration only adds a
+  table). Backend: `AuthSession` model, migration `a7d2e5f8c9b1`
+  (up/down/up on Postgres 18, `flask db check` clean), `auth.py`
+  (`token_in_blocklist_loader`, `/auth/refresh`, `/auth/logout`,
+  `/auth/logout-all`, grace 2 min, session cap 90 days), 9 new tests, 234
+  pass on SQLite and Postgres; query budget test 10 -> 11 (session lookup).
+  Frontend: refresh on load + `online` event, logout calls the server, menu
+  row "Log out on all devices"; ESLint, 66 Vitest, build OK. E2E in compose
+  with Playwright: reload rotates, old token OK in grace, two-back token
+  revokes the session, second device unaffected, logout-all ends both,
+  clicking the menu row lands on /login.
+- (b) **Photos on EKS in real S3** with **EKS Pod Identity** (no keys):
+  Terraform bucket + IAM role for the backend's service account; chart can
+  use S3 instead of Garage (Garage stays on k3s).
+  **Code done 2026-11-06, untested on AWS (needs the EKS session).**
+  Backend `storage.py`: `S3_BUCKET` is now the on/off switch; no
+  `S3_ENDPOINT` = AWS S3, no key = boto3's credential chain (Pod Identity).
+  Chart: `s3.enabled/bucket/region/serviceAccount`, ServiceAccount
+  `tripsync-backend` (only when s3.enabled), `fail` if garage and s3 are both
+  on, `required` bucket/region; k3s render verified unchanged.
+  `values-eks.yaml` (gp3 + garage off + s3 on) replaces the Jenkinsfiles'
+  `--set postgres.storageClassName=gp3`; Jenkins adds
+  `--set s3.bucket=tripsync-photos-$ACCOUNT` (from `aws sts
+  get-caller-identity`) and lints the EKS variant on every build, so push
+  tripsync-devops BEFORE the app repos' Jenkinsfile changes.
+  Terraform `terraform/aws/photos.tf`: bucket `tripsync-photos-<account>`
+  (force_destroy, public access blocked), role `tripsync-backend-photos`
+  (trust pods.eks.amazonaws.com, Get/Put/Delete object + ListBucket on that
+  bucket only), `aws_eks_pod_identity_association` tripsync/tripsync-backend;
+  `eks-pod-identity-agent` add-on in main.tf. `terraform validate` OK.
+- (c) **HashiCorp Vault** (self-hosted Community Edition, free, BSL) on the
+  homelab for ALL hand-made secrets (cloudflared-token, openrouteservice,
+  alertmanager-discord, ...), **AWS KMS auto-unseal** (~$1/month), External
+  Secrets Operator on both clusters; EKS reaches the homelab Vault over
+  Tailscale (the Tailscale auth key is the one bootstrap secret, a TF var).
+  Vault's data joins the nightly backup. This also gives EKS the ORS key
+  (routes stop being straight lines there).
+  Live applies (homelab, AWS KMS key) need Roye's go each time.
+  **Code done 2026-11-06, NOT applied (needs Roye's go + his hands for
+  `vault operator init`).** Runbook: `vault/README.md`. `terraform/vault`
+  (KMS key `alias/tripsync-vault-unseal`, prevent_destroy, 30-day deletion
+  window; IAM user `tripsync-vault-unseal` kms Encrypt/Decrypt/DescribeKey on
+  that key only; its access key -> Secret `vault/vault-kms`; Vault chart
+  0.34.1 = Vault 2.0.4, standalone Raft on Longhorn 2Gi, injector off,
+  NodePort 30820, ServiceMonitor + VaultSealed/VaultMetricsMissing rules;
+  ESO chart 2.14.0). `terraform/vault-config` (vault provider via
+  VAULT_ADDR/VAULT_TOKEN: KV v2 at `secret/`, Kubernetes auth for k3s, policy
+  eso-homelab read-all, ClusterSecretStore `vault`, Discord ExternalSecret,
+  nightly raft snapshot CronJob 03:45 to an nfs-client PVC, 14 days; `eks.tf`
+  JWT auth `jwt-eks` + role eso-eks (ORS key only) when `eks_oidc_issuer` is
+  set). Chart: `templates/external-secrets.yaml` (openrouteservice,
+  cloudflared-token; creationPolicy Orphan = takes over the hand-made Secret
+  in place), rendered only if enabled AND the ESO CRD exists, so
+  values-k3s/values-eks can turn it on before Vault exists.
+  `terraform/aws/vault.tf`: optional (`vault_enabled`), Tailscale operator
+  1.104.4 (OAuth client via TF vars), ESO, local chart `vault/eks-store`
+  (ExternalName egress Service with `tailscale.com/tailnet-fqdn`, same port
+  30820 both ends; ClusterSecretStore with JWT auth, audience "vault").
+  `vault/import-from-k8s.sh` copies the 3 hand-made Secrets into Vault
+  without printing (kubectl | base64 -d | vault kv put key=-).
+  Teacher doc: `docs/deploy-yourself.md` (quick path NOT yet tested end to end).
+- **Constraint (Roye 2026-11-06): the teacher gets the repos and deploys the
+  k3s version himself, without our keys.** So everything that needs a key or
+  Vault must stay optional and degrade gracefully (ORS -> straight lines,
+  Discord -> no alert delivery, tunnel -> LAN/NodePort access, Vault/ESO off
+  -> plain hand-made Secrets as today). Never share Roye's keys. Write a
+  "deploy it yourself" doc: each secret, required or optional, what breaks
+  without it, how to get your own (ORS key is free).
+
 **WHAT'S LEFT, in order (2026-10-31):**
 1. **Walkthrough, from the start (Roye's decision 2026-11-03).** Roye let
    Claude build more and more on its own and lost track of parts, so this is
@@ -742,7 +824,12 @@ screen (feedback addressed above).
    (10) Terraform k3s + AWS (VPC module, EKS, IAM/access entry, state lock);
    (11) security + tests (access.py 404 vs 403, isolation tests); (12) the
    incidents. Use `docs/final/` (the PDF + deck) as the map: each chapter is a
-   session-sized chunk, and fix the doc text as we go. Not started yet.
+   session-sized chunk, and fix the doc text as we go. **Started 2026-11-06;
+   progress, Roye's answers, corrections and doc fixes live in
+   [walkthrough.md](walkthrough.md): read it first and update it after every
+   topic.** Roye asked (2026-11-06): cover AWS (EKS) in every topic (what is
+   different there), and log any change made to AWS in walkthrough.md's
+   "AWS state and changes" section.
 2. **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
    case we'll edit them"), in `docs/final/`: `documentation.html` -> printed to
    `TripSync-Documentation.pdf` with headless Chrome (command at the top of the

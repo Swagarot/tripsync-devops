@@ -20,6 +20,11 @@ spec:
       # Kubernetes refuse to start it if an image ever tries to run as root.
       securityContext:
         runAsNonRoot: true
+      {{- if .Values.s3.enabled }}
+      # Its own ServiceAccount: EKS Pod Identity gives the S3 role to exactly
+      # this account in this namespace (terraform/aws/photos.tf).
+      serviceAccountName: {{ .Values.s3.serviceAccount }}
+      {{- end }}
       # Init containers run to completion before the app container starts.
       # This one brings the database schema up to date with the code in this
       # image. If it fails, the new pod never starts, the old pod keeps

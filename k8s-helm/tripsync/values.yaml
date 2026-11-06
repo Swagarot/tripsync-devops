@@ -43,6 +43,25 @@ garage:
     requests: { cpu: 25m, memory: 64Mi }
     limits:   { cpu: 500m, memory: 512Mi }
 
+s3:
+  # Photos in AWS S3 instead of Garage (EKS: turn garage off and this on). The
+  # bucket and the IAM role come from terraform/aws; the backend pod gets the
+  # role through EKS Pod Identity, linked to the ServiceAccount below, so no
+  # access key is stored anywhere.
+  enabled: false
+  bucket: ""
+  region: ""
+  serviceAccount: tripsync-backend
+
+externalSecrets:
+  # Make the hand-made Secrets from HashiCorp Vault through the External
+  # Secrets Operator (terraform/vault, vault/README.md). Off = create them by
+  # hand with kubectl as before; everything else works the same.
+  enabled: false
+  store: vault              # the ClusterSecretStore's name
+  openrouteservice: true    # Secret openrouteservice (routes; optional for the app)
+  cloudflared: true         # Secret cloudflared-token (homelab tunnel only)
+
 backup:
   # Nightly pg_dump + photo mirror to the NFS server. Off by default: only the
   # homelab has the nfs-client StorageClass, so values-k3s.yaml turns it on.
