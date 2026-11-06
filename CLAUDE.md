@@ -733,9 +733,11 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   theft -> that session is revoked. Logout revokes the session; "log out
   everywhere" revokes all. Tokens from before the change (no `sid`) keep
   working until they expire, and refresh turns them into a session.
-  **Built + tested locally 2026-11-06, NOT pushed yet** (push = Jenkins
-  deploys to live k3s; push the backend first, its migration only adds a
-  table). Backend: `AuthSession` model, migration `a7d2e5f8c9b1`
+  **LIVE 2026-11-06** (backend `ad67625` then `192bf28`, frontend `c1ec766`,
+  deployed by Jenkins -> Argo CD). Live checks: refresh rotates, old token
+  OK in grace, logout -> 401; photo upload + signed thumb still work on
+  Garage after the S3_BUCKET switch; new menu row served. Left behind: a few
+  `livecheck-*@example.com` test users in the live DB (harmless). Backend: `AuthSession` model, migration `a7d2e5f8c9b1`
   (up/down/up on Postgres 18, `flask db check` clean), `auth.py`
   (`token_in_blocklist_loader`, `/auth/refresh`, `/auth/logout`,
   `/auth/logout-all`, grace 2 min, session cap 90 days), 9 new tests, 234
@@ -748,7 +750,8 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
 - (b) **Photos on EKS in real S3** with **EKS Pod Identity** (no keys):
   Terraform bucket + IAM role for the backend's service account; chart can
   use S3 instead of Garage (Garage stays on k3s).
-  **Code done 2026-11-06, untested on AWS (needs the EKS session).**
+  **Code done + pushed 2026-11-06 (backend `192bf28`, devops `35ff892`),
+  untested on AWS (needs the EKS session).**
   Backend `storage.py`: `S3_BUCKET` is now the on/off switch; no
   `S3_ENDPOINT` = AWS S3, no key = boto3's credential chain (Pod Identity).
   Chart: `s3.enabled/bucket/region/serviceAccount`, ServiceAccount
