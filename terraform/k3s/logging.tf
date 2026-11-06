@@ -21,8 +21,12 @@ resource "helm_release" "alloy" {
   name       = "alloy"
   repository = "https://grafana.github.io/helm-charts"
   chart      = "alloy"
-  version    = "1.13.1"
-  namespace  = "monitoring"
+  # 1.15.0 = Alloy v1.21.3 (was 1.13.1 = v1.20.1). Upgraded 2026-11-06 after
+  # the second runaway-read incident: one Alloy pod re-reading from disk at
+  # ~900 MB/s saturated the shared Proxmox storage (k3s SQLite "database is
+  # locked", all Longhorn volumes degraded). Only the images change.
+  version   = "1.15.0"
+  namespace = "monitoring"
 
   values = [file("${path.module}/../../monitoring/alloy.yaml")]
 

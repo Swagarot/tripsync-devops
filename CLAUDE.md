@@ -721,6 +721,33 @@ screen (feedback addressed above).
 
 **Open items (updated 2026-10-31; features are complete):**
 
+**INCIDENT 2026-11-06 (fixed): cluster-wide slowdown, all Longhorn volumes
+degraded.** Seen as k3s "database is locked" during the vault-config apply.
+Two faults: (1) **Alloy thrashing** on k8sworker1 from 15:34 UTC: ~900 MB/s
+disk reads (`/proc/1/io` read_bytes 549 GB vs rchar 3 GB = memory paging, not
+log reading; 46 major faults/s) near its 256Mi limit; all 3 VMs share the
+Proxmox storage, so every disk hit ~100% busy, k3s SQLite locked, CSI
+sidecars lost leases and crash-looped. Roye had restart-fixed this once before
+(in Claude chat). Fix: chart 1.13.1 -> 1.15.0 (Alloy v1.21.3), limit 512Mi,
+request 128Mi, `GOMEMLIMIT=400MiB` (`monitoring/alloy.yaml`), applied by Roye
+with `terraform -chdir=terraform/k3s apply -target=helm_release.alloy`; new
+alert `AlloyRunawayReads` (>50 MB/s for 5m, critical,
+`monitoring/longhorn-monitoring.yaml`, NOT applied yet: needs
+`-target=helm_release.kube_prometheus_stack`). (2) **Longhorn engine binary
+missing on k8sworker2 since Nov 2 18:24 UTC** (Roye's shutdown to add GPUs):
+the engine-image pod deletes its binary on stop and copies it on start;
+worker2's never came back (likely race: pod started before /dev/sdb was
+mounted on /var/lib/longhorn). Running replicas survived; the Prometheus
+replica died Nov 2 (LonghornVolumeDegraded fired for 4 days unnoticed), the
+other 4 died today in the I/O storm, and no rebuild could start (instance
+manager: `stat .../engine-binaries/.../longhorn: no such file`) -> 738
+replica API writes/min. Fix: Roye deleted the worker2 engine-image pod ->
+"installed" -> all 5 volumes healthy, churn 1/min. Prevention given to Roye:
+systemd drop-in `RequiresMountsFor=/var/lib/longhorn` for k3s-agent on each
+worker; drain/uncordon one node at a time for host maintenance; take
+LonghornVolumeDegraded seriously. Defense point: shared storage + single
+SQLite server = one noisy process takes the whole cluster down.
+
 **SPRINT IN PROGRESS (decided by Roye 2026-11-06, before walkthrough topic 2):**
 the project is meant to be hybrid, so EKS gets the same features as k3s, plus
 token rotation. Order: build all, test locally, then ONE EKS session together

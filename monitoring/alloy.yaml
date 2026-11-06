@@ -17,9 +17,21 @@ alloy:
   # node; mount it read-only into Alloy.
   mounts:
     varlog: true
+  # Memory: 256Mi was too tight. Alloy's memory grows with every log file it
+  # has followed (crash-looping pods make new ones all the time); near the
+  # limit the kernel kept evicting its pages and reading them back: 549 GB
+  # read from disk for 3 GB of logs, ~900 MB/s, which saturated the shared
+  # Proxmox storage and took k3s (SQLite) and Longhorn down with it
+  # (2026-11-06, the second time; a restart only reset the growth).
+  # GOMEMLIMIT makes Go's garbage collector work harder before the limit
+  # instead of letting the kernel thrash; set below the limit to leave room
+  # for non-heap memory.
   resources:
-    requests: { cpu: 20m, memory: 64Mi }
-    limits: { memory: 256Mi }
+    requests: { cpu: 20m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  extraEnv:
+    - name: GOMEMLIMIT
+      value: 400MiB
   configMap:
     content: |
       // 1. Find the pods running on THIS node. HOSTNAME is set to the node

@@ -21,7 +21,8 @@ This file is committed: no secrets, tokens, account IDs or internal IPs.
 | 8 | Storage: Longhorn, replica vs backup, backup CronJob + restore | |
 | 9 | Observability: Prometheus, ServiceMonitor, rules, Alertmanager, Loki/Alloy | |
 | 10 | Terraform: k3s + AWS (VPC module, EKS, IAM access entry, state lock) | |
-| 11 | Security + tests (access.py 404 vs 403, isolation tests) | |
+| 11 | Security + tests (access.py 404 vs 403, isolation tests, token rotation) | |
+| 11b | Secrets: Vault outside k3s, KMS auto-unseal, External Secrets, Tailscale-only (built 2026-11-06) | |
 | 12 | The incidents | |
 
 ## AWS state and changes

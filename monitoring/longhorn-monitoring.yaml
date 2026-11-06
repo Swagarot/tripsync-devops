@@ -121,3 +121,27 @@ additionalPrometheusRulesMap:
                 Prometheus gets nothing from longhorn-manager, so the Longhorn
                 alerts can't fire. Check the longhorn-manager pods and the
                 longhorn-manager-allow-prometheus NetworkPolicy.
+
+  # Incident 2026-11-06 (and once before): one Alloy pod ran out of memory
+  # headroom and thrashed, reading ~900 MB/s from disk. All VMs share the
+  # Proxmox storage, so the whole cluster slowed down: k3s's SQLite answered
+  # "database is locked", and Longhorn couldn't keep or rebuild copies.
+  # monitoring/alloy.yaml now gives it 512Mi + GOMEMLIMIT; this catches a
+  # repeat within minutes instead of hours.
+  homelab-storage:
+    groups:
+      - name: homelab-storage
+        rules:
+          - alert: AlloyRunawayReads
+            expr: >-
+              sum by (pod, node) (rate(container_fs_reads_bytes_total{namespace="monitoring", pod=~"alloy-.*"}[5m])) > 50e6
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Alloy {{ $labels.pod }} reads {{ $value | humanize }}B/s from disk on {{ $labels.node }}"
+              description: >-
+                Alloy is thrashing (normal: a few MB/s, ~10 right after a restart). It saturates the
+                shared Proxmox storage and takes k3s and Longhorn down with it.
+                Fix: kubectl -n monitoring delete pod {{ $labels.pod }}. Then
+                check its memory against the limit in monitoring/alloy.yaml.

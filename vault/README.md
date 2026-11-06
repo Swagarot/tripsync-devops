@@ -57,6 +57,9 @@ machine only).
    EKS proxy) reach `tag:vault` on tcp:8200. Only effective once the default
    allow-all grant is replaced by specific grants: removing allow-all alone
    cuts every other Tailscale path (kubectl, SSH, Grafana) - list those too.
+   Vault also needs `tag:vault` -> the k3s control node on tcp:6443: it
+   checks pod logins against the k3s API over Tailscale (the Vault LXC can't
+   reach the LAN address).
 2. **AWS + ESO:** `terraform -chdir=terraform/vault init && terraform -chdir=terraform/vault apply`
    (KMS key + the unseal IAM user, and ESO in k3s).
 3. **The container**, on the Vault machine (an LXC with Tailscale and Docker
