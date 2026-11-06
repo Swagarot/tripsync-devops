@@ -767,36 +767,43 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   (trust pods.eks.amazonaws.com, Get/Put/Delete object + ListBucket on that
   bucket only), `aws_eks_pod_identity_association` tripsync/tripsync-backend;
   `eks-pod-identity-agent` add-on in main.tf. `terraform validate` OK.
-- (c) **HashiCorp Vault** (self-hosted Community Edition, free, BSL) on the
-  homelab for ALL hand-made secrets (cloudflared-token, openrouteservice,
-  alertmanager-discord, ...), **AWS KMS auto-unseal** (~$1/month), External
-  Secrets Operator on both clusters; EKS reaches the homelab Vault over
-  Tailscale (the Tailscale auth key is the one bootstrap secret, a TF var).
-  Vault's data joins the nightly backup. This also gives EKS the ORS key
-  (routes stop being straight lines there).
-  Live applies (homelab, AWS KMS key) need Roye's go each time.
-  **Code done 2026-11-06, NOT applied (needs Roye's go + his hands for
-  `vault operator init`).** Runbook: `vault/README.md`. `terraform/vault`
-  (KMS key `alias/tripsync-vault-unseal`, prevent_destroy, 30-day deletion
-  window; IAM user `tripsync-vault-unseal` kms Encrypt/Decrypt/DescribeKey on
-  that key only; its access key -> Secret `vault/vault-kms`; Vault chart
-  0.34.1 = Vault 2.0.4, standalone Raft on Longhorn 2Gi, injector off,
-  NodePort 30820, ServiceMonitor + VaultSealed/VaultMetricsMissing rules;
-  ESO chart 2.14.0). `terraform/vault-config` (vault provider via
-  VAULT_ADDR/VAULT_TOKEN: KV v2 at `secret/`, Kubernetes auth for k3s, policy
-  eso-homelab read-all, ClusterSecretStore `vault`, Discord ExternalSecret,
-  nightly raft snapshot CronJob 03:45 to an nfs-client PVC, 14 days; `eks.tf`
-  JWT auth `jwt-eks` + role eso-eks (ORS key only) when `eks_oidc_issuer` is
-  set). Chart: `templates/external-secrets.yaml` (openrouteservice,
-  cloudflared-token; creationPolicy Orphan = takes over the hand-made Secret
-  in place), rendered only if enabled AND the ESO CRD exists, so
-  values-k3s/values-eks can turn it on before Vault exists.
-  `terraform/aws/vault.tf`: optional (`vault_enabled`), Tailscale operator
-  1.104.4 (OAuth client via TF vars), ESO, local chart `vault/eks-store`
-  (ExternalName egress Service with `tailscale.com/tailnet-fqdn`, same port
-  30820 both ends; ClusterSecretStore with JWT auth, audience "vault").
-  `vault/import-from-k8s.sh` copies the 3 hand-made Secrets into Vault
-  without printing (kubectl | base64 -d | vault kv put key=-).
+- (c) **HashiCorp Vault** (self-hosted Community Edition, free, BSL) for ALL
+  hand-made secrets (cloudflared-token, openrouteservice,
+  alertmanager-discord), **AWS KMS auto-unseal** (~$1/month), External
+  Secrets Operator on both clusters. **Redesigned same day (Roye): Vault runs
+  OUTSIDE k3s, as a container on its own homelab machine (not a k3s node),
+  reachable over Tailscale ONLY** (Roye: in-cluster is bad security-wise;
+  Cloudflare exposure rejected: Vault has no public users). Roye sets up the
+  container himself from `vault/compose/` (Claude wrote it). Runbook:
+  `vault/README.md`. NOT applied yet; live applies need Roye's go.
+  Built: `vault/compose` (tailscale sidecar `tailscale/tailscale:v1.104.4`
+  as device "vault", tag:vault, Vault `hashicorp/vault:2.0.4` with
+  `network_mode: service:tailscale` = no host ports; `vault.hcl` Raft at
+  /vault/file in a named volume, disable_mlock, awskms seal from env,
+  unauthenticated metrics; backup service: nightly 03:45 UTC raft snapshot to
+  BACKUP_DIR, 14 days, periodic token with policy raft-snapshot; `.env` from
+  `.env.example`, gitignored). Tested locally (no KMS): init, unseal, KV,
+  snapshot, metrics all OK. `terraform/vault`: KMS key (prevent_destroy,
+  alias tripsync-vault-unseal) + IAM user tripsync-vault-unseal (Encrypt/
+  Decrypt/DescribeKey on that key) + access key as outputs for .env; ESO
+  chart 2.14.0 in k3s. `terraform/vault-config` (vault provider via
+  VAULT_ADDR/VAULT_TOKEN; vars `vault_addr` = Vault's Tailscale IP for pods,
+  `k3s_api_url` = API address in its cert, as the container reaches it; both
+  internal, so tfvars/CLI, never git): KV v2 `secret/`, Kubernetes auth with
+  a `vault-auth` token-reviewer SA (system:auth-delegator, long-lived token
+  Secret) + kube-root-ca, policy eso-homelab, ClusterSecretStore `vault`,
+  Discord ExternalSecret (Orphan), policy raft-snapshot, ScrapeConfig (label
+  release=kube-prometheus-stack, verified as the live selector) + rules
+  VaultSealed/VaultDown; `eks.tf` JWT auth `jwt-eks` + role eso-eks (ORS key
+  only) when `eks_oidc_issuer` is set. Chart: `templates/external-secrets.yaml`
+  (openrouteservice, cloudflared-token; creationPolicy Orphan), rendered only
+  if enabled AND the ESO CRD exists. `terraform/aws/vault.tf`: optional
+  (`vault_enabled`), Tailscale operator 1.104.4, ESO, local chart
+  `vault/eks-store` (egress ExternalName Service -> vault.<tailnet>.ts.net
+  :8200, ClusterSecretStore with JWT auth). `vault/import-from-k8s.sh`
+  copies the 3 hand-made Secrets in without printing. To verify live: pods
+  reaching a 100.x Tailscale IP through the node (expected to work: nodes run
+  Tailscale, pod traffic is masqueraded).
   Teacher doc: `docs/deploy-yourself.md` (quick path NOT yet tested end to end).
 - **Constraint (Roye 2026-11-06): the teacher gets the repos and deploys the
   k3s version himself, without our keys.** So everything that needs a key or

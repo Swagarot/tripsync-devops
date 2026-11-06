@@ -39,8 +39,10 @@ Planned 2026-11-06 (Roye's decisions, see CLAUDE.md "Sprint in progress"):
 - S3 bucket for photos on EKS + IAM role via **EKS Pod Identity** (no keys).
   Code written 2026-11-06 (`terraform/aws/photos.tf`, `values-eks.yaml`),
   not applied: it's created with the cluster and destroyed with it.
-- AWS KMS key for **Vault auto-unseal** (Vault itself runs on the homelab);
-  lives permanently, ~$1/month.
+- AWS KMS key + IAM user for **Vault auto-unseal**; lives permanently,
+  ~$1/month. Vault itself is a container on a homelab machine outside k3s,
+  Tailscale only (Roye's call 2026-11-06: in-cluster Vault is weak
+  security-wise; Cloudflare exposure rejected, Vault has no public users).
 - EKS joins Tailscale to reach Vault through the External Secrets Operator,
   which also brings the ORS key (real routes on EKS).
 
@@ -131,6 +133,18 @@ them out.
   Why: Jenkins holds no cluster credentials; the cluster pulls; git log =
   deploy history, git revert = rollback. EKS stays push (Jenkins runs
   `helm upgrade`) for contrast.
+- *"So on k3s we don't really use Helm?"* Right: Argo CD only uses Helm as
+  a template engine (`helm template` in its repo-server), then owns the YAML;
+  no Helm release, history or rollback (git does that). Effects: `lookup`
+  returns nothing (generated-Secret workaround), `.Release.Name` from
+  apps.yaml, `.Capabilities` from the real cluster, Helm hooks -> Argo hooks.
+- *"Does anyone use Helm like this, is it prod-ready?"* Yes: standard Argo CD
+  behaviour, widely used in production. Alternatives: Flux helm-controller
+  (real Helm releases), "rendered manifests" (CI commits the helm template
+  output). Our homelab-sized gaps to name in the defense: generated secrets
+  in the chart (prod: External Secrets/Vault or Sealed Secrets - started),
+  one environment straight to prod (prod: staging + promotion,
+  ApplicationSets), Argo UI on http NodePort (prod: TLS + SSO + RBAC).
 - *Straight lines on AWS.* Routes between a day's stops (walk/bike/drive)
   come from OpenRouteService, which needs an API key (a k8s Secret on k3s,
   created by hand, not in git). EKS has no such Secret, so `/routes` answers

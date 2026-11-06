@@ -1,0 +1,85 @@
+# HashiCorp Vault for TripSync, OUTSIDE the k3s cluster: a container on its
+# own homelab machine (not a k3s node), so a broken or compromised cluster
+# doesn't take its secrets store with it. Both clusters reach it over
+# Tailscale only.
+#
+#   cp .env.example .env    # fill it in (see the comments there)
+#   docker compose up -d
+#   docker compose exec vault vault operator init   # once; see ../README.md
+#
+# Network: Vault publishes NO port on the host. It shares the network of the
+# tailscale container (network_mode: service:tailscale), which joins the
+# tailnet as its own device, "vault". So Vault is reachable only at
+# http://vault.<tailnet>.ts.net:8200 from tailnet devices that the Tailscale
+# ACL allows (tag:vault, see ../README.md), and from nowhere else: not the
+# LAN, not the internet. WireGuard encrypts it, hence no TLS in Vault itself.
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.104.4
+    hostname: vault
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_EXTRA_ARGS: --advertise-tags=tag:vault
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:2.0.4
+    network_mode: service:tailscale
+    command: server
+    environment:
+      # Auto-unseal with AWS KMS (terraform/vault/kms.tf). After a restart or
+      # reboot Vault unseals itself; nobody types unseal keys.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      VAULT_AWSKMS_SEAL_KEY_ID: ${VAULT_AWSKMS_SEAL_KEY_ID}
+      AWS_REGION: eu-central-1
+      VAULT_ADDR: http://127.0.0.1:8200   # for `docker compose exec vault vault ...`
+    volumes:
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+      - vault-data:/vault/file
+    depends_on:
+      - tailscale
+    restart: unless-stopped
+
+  # Nightly Raft snapshot at 03:45 UTC (the container's clock), 14 days kept.
+  # The whole Vault, still encrypted: restoring it needs the same KMS key.
+  # There are no Longhorn-style copies here, so this is the only protection
+  # against a lost disk or a deleted secret: point BACKUP_DIR at another
+  # machine (the NFS share).
+  backup:
+    image: hashicorp/vault:2.0.4
+    network_mode: service:tailscale
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          sleep $$(( (86400 + 3*3600 + 45*60 - $$(date +%s) % 86400) % 86400 ))
+          vault token renew >/dev/null &&
+          vault operator raft snapshot save /backups/vault-$$(date +%F).snap &&
+          find /backups -name 'vault-*.snap' -mtime +14 -delete &&
+          echo "$$(date) snapshot saved" || echo "$$(date) SNAPSHOT FAILED"
+        done
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      # A periodic token with only the raft-snapshot policy; renewed on every
+      # run, so it never expires while backups keep running (../README.md).
+      VAULT_TOKEN: ${VAULT_BACKUP_TOKEN}
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      - vault
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:
+  vault-data:

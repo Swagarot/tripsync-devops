@@ -4,10 +4,11 @@ ClusterSecretStore's CRD only exists after the operator is installed in the
 same apply, and Helm (unlike kubernetes_manifest) doesn't need it at plan time.
 */ -}}
 # Egress to the homelab over Tailscale: the Tailscale operator sees this
-# ExternalName Service, starts a proxy pod that is a device on the tailnet,
-# and points the Service at it. In-cluster traffic to vault-homelab:<port>
-# comes out at the homelab node's Vault NodePort, same port number (the proxy
-# keeps ports). WireGuard-encrypted all the way.
+# ExternalName Service, starts a proxy pod that is a device on the tailnet
+# (tag:k8s), and points the Service at it. In-cluster traffic to
+# vault-homelab:8200 comes out at the Vault container's tailnet device, same
+# port. WireGuard-encrypted all the way; the Tailscale ACL must let tag:k8s
+# reach tag:vault on 8200.
 apiVersion: v1
 kind: Service
 metadata:
@@ -20,7 +21,7 @@ spec:
   externalName: placeholder   # the operator replaces this
   ports:
     - name: vault
-      port: {{ .Values.vaultNodePort }}
+      port: {{ .Values.vaultPort }}
       protocol: TCP
 ---
 # Logs in with the operator's own ServiceAccount token (audience "vault").
@@ -34,7 +35,7 @@ metadata:
 spec:
   provider:
     vault:
-      server: http://vault-homelab.external-secrets.svc:{{ .Values.vaultNodePort }}
+      server: http://vault-homelab.external-secrets.svc:{{ .Values.vaultPort }}
       path: secret
       version: v2
       auth:

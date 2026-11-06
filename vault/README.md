@@ -1,27 +1,39 @@
 # Vault: one place for every secret
 
-HashiCorp Vault (self-hosted Community Edition) runs on the homelab and holds
-the secrets that used to be created by hand with `kubectl create secret`. The
-External Secrets Operator (ESO) copies them into ordinary Kubernetes Secrets,
-with the same names and keys, so no app changes. Both clusters read the same
-Vault: k3s directly, EKS over Tailscale.
+HashiCorp Vault (self-hosted Community Edition) holds the secrets that used to
+be created by hand with `kubectl create secret`. It runs **outside the
+clusters**, as a container on its own homelab machine (`vault/compose`), and
+is reachable **only over Tailscale**. The External Secrets Operator (ESO) in
+each cluster copies secrets from it into ordinary Kubernetes Secrets, with the
+same names and keys, so no app changes.
 
 **Optional.** Without this layer everything works with hand-made Secrets
 (see `docs/deploy-yourself.md`).
 
 ```
-                 homelab k3s                                   AWS
-  ┌───────────────────────────────────────────┐        ┌────────────────────┐
-  │ vault-0 (Raft on Longhorn) ◄──────────────┼── KMS ─┤ auto-unseal key    │
-  │   ▲ Kubernetes auth                       │        └────────────────────┘
-  │ ESO ──► Secrets: openrouteservice,         │        ┌────────────────────┐
-  │         cloudflared-token,                │        │ EKS                │
-  │         alertmanager-discord              │◄───────┤ ESO ─► openroute-  │
-  │ NodePort 30820 (LAN + Tailscale)          │ Tail-  │        service     │
-  └───────────────────────────────────────────┘ scale  │ (JWT auth, ORS     │
-                                                       │  key only)         │
-                                                       └────────────────────┘
+   Vault machine (not a k3s node)             AWS
+  ┌──────────────────────────────┐        ┌───────────────────┐
+  │ tailscale ── device "vault"  │        │ KMS: auto-unseal  │◄─┐
+  │ vault (Raft, named volume) ──┼────────┼───────────────────┘  │
+  │ backup (nightly snapshot)    │                               │
+  └──────────────▲───────────────┘                               │
+                 │ Tailscale only (tag:vault, port 8200)         │
+     ┌───────────┴─────────────┐          ┌──────────────────────┴─┐
+     │ k3s: ESO ─► Secrets      │          │ EKS: Tailscale egress  │
+     │ openrouteservice,        │          │ proxy ─► ESO ─►        │
+     │ cloudflared-token,       │          │ openrouteservice only  │
+     │ alertmanager-discord     │          └────────────────────────┘
+     │ Prometheus scrapes Vault │
+     └──────────────────────────┘
 ```
+
+Why outside the cluster: a broken or compromised k3s shouldn't take its
+secrets store down with it (or hand it over: cluster admin can `exec` into any
+pod), and rebuilding k3s from scratch is easier when the secrets are already
+waiting. Production setups keep Vault on dedicated machines for the same
+reasons. Why Tailscale only: Vault has no public users (two ESOs and the
+owner), so it shouldn't be on the internet at all; the Cloudflare tunnel is
+for the app's browsers, not for this.
 
 ## What lives where
 
@@ -32,47 +44,60 @@ Vault: k3s directly, EKS over Tailscale.
 | `monitoring/discord`    | `url`     | `monitoring/alertmanager-discord` (`webhook-url`) | k3s |
 
 Not in Vault on purpose: the secrets the Helm chart generates itself
-(Postgres password, JWT key, Garage keys; `templates/secret.yaml`), and the
-Vault unseal credentials (they unlock Vault, so they can't live in it).
+(Postgres password, JWT key, Garage keys; `templates/secret.yaml`), and
+Vault's own unseal credentials and Tailscale key (they are how Vault starts,
+so they can't live in it; they are in `vault/compose/.env` on the Vault
+machine only).
 
-## Setup, in order (homelab)
+## Setup, in order
 
-1. **Infrastructure** (KMS key, Vault, ESO):
-   `terraform -chdir=terraform/vault init && terraform -chdir=terraform/vault apply`
-   The pod `vault-0` starts but stays not-ready: it is not initialized yet.
-2. **Initialize, once:**
-   `kubectl -n vault exec -it vault-0 -- vault operator init`
-   With auto-unseal this prints **recovery keys** (needed only for a few
-   admin operations, never for unsealing) and the **initial root token**. Put
-   both in your password manager, not in a file, not in git. Vault unseals by
-   itself from now on, also after every restart.
-3. **Configuration** (KV mount, policies, logins, ClusterSecretStore, Discord
-   ExternalSecret, nightly backup):
-   `export VAULT_ADDR=http://<homelab node>:30820 VAULT_TOKEN=<root token>`
-   `terraform -chdir=terraform/vault-config init && terraform -chdir=terraform/vault-config apply`
-4. **Copy today's secrets in** (values never printed):
-   `./vault/import-from-k8s.sh`
-5. The chart's ExternalSecrets (`values-k3s.yaml`, `externalSecrets.enabled`)
-   now find the store and take over `openrouteservice` and
-   `cloudflared-token` in place (`creationPolicy: Orphan`). Check:
-   `kubectl get externalsecret -A` -> `SecretSynced`.
-6. Optional hardening: create an admin token/policy for daily use and revoke
-   the root token (`vault token revoke <root>`); a new root token can be made
-   later from the recovery keys (`vault operator generate-root`).
+1. **Tailscale ACL** (admin console, access controls): a tag `tag:vault`
+   (owner: you), and rules letting your devices, the k3s nodes and `tag:k8s`
+   (the EKS proxy) reach `tag:vault:8200`. Nothing else may reach it.
+2. **AWS + ESO:** `terraform -chdir=terraform/vault init && terraform -chdir=terraform/vault apply`
+   (KMS key + the unseal IAM user, and ESO in k3s).
+3. **The container**, on the Vault machine (Docker + compose installed):
+   copy `vault/compose/`, `cp .env.example .env`, fill in `TS_AUTHKEY` and the
+   three KMS values (`terraform -chdir=terraform/vault output -raw ...`, see
+   `.env.example`), `docker compose up -d`. The machine needs `/dev/net/tun`
+   (in a Proxmox LXC: enable TUN for the container).
+4. **Initialize, once:** `docker compose exec vault vault operator init`.
+   With auto-unseal this prints **recovery keys** (only for a few admin
+   operations, never for unsealing) and the **initial root token**. Both go in
+   your password manager, not a file, not git. From now on Vault unseals by
+   itself after every restart.
+5. **Configuration** (KV mount, policies, logins, ClusterSecretStore, Discord
+   ExternalSecret, Prometheus scrape + alerts), from a machine with kubectl:
+   `export VAULT_ADDR=http://vault.<tailnet>.ts.net:8200 VAULT_TOKEN=<root token>`
+   `terraform -chdir=terraform/vault-config apply -var vault_addr=http://<Vault's Tailscale IP>:8200 -var k3s_api_url=https://<control node LAN IP>:6443`
+   (pods can't resolve MagicDNS names, hence the IP; the API URL must be an
+   address in the k3s API certificate).
+6. **Backup token:** `docker compose exec vault vault token create -policy=raft-snapshot -period=768h -orphan -field=token`
+   (with `VAULT_TOKEN` set) into `.env` as `VAULT_BACKUP_TOKEN`, set
+   `BACKUP_DIR` (ideally the NFS share mounted on that machine),
+   `docker compose up -d` again.
+7. **Copy today's secrets in** (values never printed): `./vault/import-from-k8s.sh`
+8. The chart's ExternalSecrets (`values-k3s.yaml`, `externalSecrets.enabled`)
+   now find the store and take over `openrouteservice` and `cloudflared-token`
+   in place (`creationPolicy: Orphan`). Check: `kubectl get externalsecret -A`
+   -> `SecretSynced`.
+9. Hardening: an admin policy + token for daily use, then revoke the root
+   token (`vault token revoke <root>`); a new one can be made from the
+   recovery keys (`vault operator generate-root`).
 
 ## EKS (during an EKS session)
 
-1. Tailscale admin console: an OAuth client with scope `devices:core` +
-   `auth_keys`, tag `tag:k8s-operator`; tag owners and an ACL that lets
-   `tag:k8s` reach the homelab nodes on port 30820.
-2. `TF_VAR_vault_enabled=true TF_VAR_vault_tailnet_host=<node>.<tailnet>.ts.net
+1. Tailscale admin console: an OAuth client (scopes `devices:core`,
+   `auth_keys`; tag `tag:k8s-operator`), tag owners for `tag:k8s-operator`
+   and `tag:k8s`, and the ACL rule `tag:k8s` -> `tag:vault:8200`.
+2. `TF_VAR_vault_enabled=true TF_VAR_vault_tailnet_host=vault.<tailnet>.ts.net
    TF_VAR_tailscale_oauth_client_id=... TF_VAR_tailscale_oauth_client_secret=...
    terraform -chdir=terraform/aws apply`
-3. `terraform -chdir=terraform/vault-config apply -var eks_oidc_issuer=$(terraform -chdir=terraform/aws output -raw oidc_issuer)`
+3. `terraform -chdir=terraform/vault-config apply ... -var eks_oidc_issuer=$(terraform -chdir=terraform/aws output -raw oidc_issuer)`
 4. The next EKS deploy renders the `openrouteservice` ExternalSecret
    (`values-eks.yaml`); routes work instead of straight lines.
-5. After the teardown: `terraform -chdir=terraform/vault-config apply`
-   (no variable) removes the EKS login again.
+5. After the teardown: `terraform -chdir=terraform/vault-config apply` without
+   `eks_oidc_issuer` removes the EKS login again.
 
 ## Day to day
 
@@ -81,15 +106,20 @@ Vault unseal credentials (they unlock Vault, so they can't live in it).
   or at once: `kubectl -n tripsync annotate externalsecret openrouteservice force-sync=$(date +%s) --overwrite`.
   Pods read env vars only at start: `kubectl -n tripsync rollout restart deploy/tripsync-backend`.
 - Undo a bad change: KV v2 keeps versions, `vault kv rollback -mount=secret -version=<n> <path>`.
-- UI: `http://<homelab node>:30820` (LAN/Tailscale only).
+- UI: `http://vault.<tailnet>.ts.net:8200` (tailnet only).
+- Upgrade: change the image tag in `docker-compose.yml` (both services),
+  `docker compose up -d`, check `vault status`.
 
 ## When things go wrong
 
-- **VaultSealed alert:** Vault restarted and KMS didn't answer. Check
-  `kubectl -n vault logs vault-0` (AWS reachable? `vault-kms` key still
-  valid?). Apps keep working on the Secrets they have; only changes stop syncing.
-- **Restore:** snapshots are on the NFS share (`vault-backup` PVC), one per
-  night, 14 days. `vault operator raft snapshot restore <file>`; it unseals
-  with the same KMS key, so the key must still exist (it is
-  `prevent_destroy`, and AWS waits 30 days before deleting a KMS key).
+- **VaultSealed:** Vault restarted and KMS didn't answer. On the Vault machine:
+  `docker compose logs vault` (AWS reachable? unseal key in `.env` still valid?).
+- **VaultDown:** Prometheus can't reach it: `docker compose ps`, and is the
+  `vault` device online in the Tailscale admin console?
+- In both cases apps keep working on the Secrets they have; only changes stop
+  syncing.
+- **Restore:** `vault operator raft snapshot restore -force <file>` from
+  `BACKUP_DIR` (one per night, 14 days). It unseals with the same KMS key, so
+  the key must still exist (`prevent_destroy`, and AWS waits 30 days before
+  deleting a KMS key).
 - **Lost the root token:** `vault operator generate-root` with the recovery keys.

@@ -1,10 +1,11 @@
-# OPTIONAL: EKS reads the ORS key (routes) from the homelab's Vault, so both
-# clusters share one source of secrets (hybrid). Off by default; then EKS
+# OPTIONAL: EKS reads the ORS key (routes) from the homelab's Vault (a
+# container on the tailnet, vault/compose), so both clusters share one source
+# of secrets (hybrid). Off by default; then EKS
 # works as before, with straight lines instead of routes.
 #
 # Turn on (after the homelab Vault is set up, vault/README.md):
 #   export TF_VAR_vault_enabled=true
-#   export TF_VAR_vault_tailnet_host=<homelab node>.<tailnet>.ts.net
+#   export TF_VAR_vault_tailnet_host=vault.<tailnet>.ts.net
 #   export TF_VAR_tailscale_oauth_client_id=... TF_VAR_tailscale_oauth_client_secret=...
 #   terraform apply
 # then give Vault this cluster's login (terraform/vault-config, variable
@@ -21,7 +22,7 @@ variable "vault_enabled" {
 }
 
 variable "vault_tailnet_host" {
-  description = "MagicDNS name of a homelab node (Vault's NodePort 30820 listens on every node)"
+  description = "MagicDNS name of the Vault container's tailnet device (vault.<tailnet>.ts.net)"
   type        = string
   default     = ""
 }

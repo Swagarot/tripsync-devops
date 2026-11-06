@@ -1,0 +1,3 @@
+# Real values and local state, never in git.
+.env
+backups/
