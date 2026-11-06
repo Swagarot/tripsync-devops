@@ -10,7 +10,7 @@
 backend:
   image:
     # Set by the backend Jenkins job (short SHA of tripsync-backend).
-    tag: "10cd680"
+    tag: "ad67625"
 frontend:
   image:
     # Set by the frontend Jenkins job (short SHA of tripsync-frontend).
