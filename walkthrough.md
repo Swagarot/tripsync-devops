@@ -118,6 +118,19 @@ them out.
   scripts in `migrations/`; `flask db upgrade` applies the ones the DB hasn't
   had yet (Alembic records the current version in table `alembic_version`).
 - *Argo CD setup:* short preview given; full topic is #6.
+- *"Jenkins listens on each repo, but how does Argo deploy?"* (2026-11-06)
+  Jenkins **polls** (every ~5 min; GitHub can't reach the homelab, so no
+  webhooks). Jenkins never deploys on k3s: its Deploy stage changes one line
+  (`backend.image.tag`) in `tripsync-devops/k8s-helm/tripsync/values-k3s.yaml`
+  and pushes a "Deploy backend <sha>" commit. Argo CD (a pod in k3s) polls
+  tripsync-devops (~60 s), renders the chart with values.yaml +
+  values-k3s.yaml, diffs it against the cluster, and applies the difference
+  (the Deployment's image tag); Kubernetes then does the rolling update
+  (migrate init container, readiness, old pod removed). Seen live
+  2026-11-06: `955164c Deploy backend ad67625` -> live a minute later.
+  Why: Jenkins holds no cluster credentials; the cluster pulls; git log =
+  deploy history, git revert = rollback. EKS stays push (Jenkins runs
+  `helm upgrade`) for contrast.
 - *Straight lines on AWS.* Routes between a day's stops (walk/bike/drive)
   come from OpenRouteService, which needs an API key (a k8s Secret on k3s,
   created by hand, not in git). EKS has no such Secret, so `/routes` answers
