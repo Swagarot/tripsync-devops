@@ -1,3 +1,3 @@
 # Set by terraform/aws/vault.tf.
-vaultTailnetHost: ""   # the Vault container's MagicDNS name: vault.<tailnet>.ts.net
+vaultTailnetHost: ""   # the Vault machine's MagicDNS name: <machine>.<tailnet>.ts.net
 vaultPort: 8200

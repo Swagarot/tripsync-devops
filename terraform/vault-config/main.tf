@@ -1,7 +1,7 @@
 # Vault's configuration as code: where secrets live, who may read them, and
 # how the clusters log in. Applied after `vault operator init`
 # (vault/README.md), with an admin token in the environment:
-#   export VAULT_ADDR=http://vault.<tailnet>.ts.net:8200 VAULT_TOKEN=<admin token>
+#   export VAULT_ADDR=http://<vault machine>.<tailnet>.ts.net:8200 VAULT_TOKEN=<admin token>
 #   terraform apply -var vault_addr=... -var k3s_api_url=...
 # (or put the two in a terraform.tfvars, which .gitignore keeps out of git:
 # they are internal addresses).

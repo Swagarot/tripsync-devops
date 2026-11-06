@@ -5,7 +5,7 @@
 #
 # Turn on (after the homelab Vault is set up, vault/README.md):
 #   export TF_VAR_vault_enabled=true
-#   export TF_VAR_vault_tailnet_host=vault.<tailnet>.ts.net
+#   export TF_VAR_vault_tailnet_host=<vault machine>.<tailnet>.ts.net
 #   export TF_VAR_tailscale_oauth_client_id=... TF_VAR_tailscale_oauth_client_secret=...
 #   terraform apply
 # then give Vault this cluster's login (terraform/vault-config, variable
@@ -22,7 +22,7 @@ variable "vault_enabled" {
 }
 
 variable "vault_tailnet_host" {
-  description = "MagicDNS name of the Vault container's tailnet device (vault.<tailnet>.ts.net)"
+  description = "MagicDNS name of the Vault machine (<vault machine>.<tailnet>.ts.net)"
   type        = string
   default     = ""
 }

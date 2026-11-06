@@ -33,7 +33,12 @@ afterwards (0 volumes, 0 load balancers, 0 non-default VPCs, 0 EIPs,
 `jenkins-eks` IAM user. The DynamoDB lock table was deleted 2026-10-31.
 
 Log any change to AWS here (date, what, why):
-- (none applied since the walkthrough started)
+- **2026-11-06, terraform/vault applied by Roye:** KMS key
+  `alias/tripsync-vault-unseal` (permanent, ~$1/month, prevent_destroy,
+  30-day deletion window, rotation on), IAM user `tripsync-vault-unseal`
+  (only kms Encrypt/Decrypt/DescribeKey on that key) + one access key (for
+  the Vault container's .env). Why: Vault auto-unseal. Same apply installed
+  the External Secrets Operator in k3s (chart 2.14.0).
 
 Planned 2026-11-06 (Roye's decisions, see CLAUDE.md "Sprint in progress"):
 - S3 bucket for photos on EKS + IAM role via **EKS Pod Identity** (no keys).

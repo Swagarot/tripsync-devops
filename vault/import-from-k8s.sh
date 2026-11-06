@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time move of today's hand-made Kubernetes Secrets into Vault.
 # Run by the owner (needs kubectl on the homelab and a Vault admin token):
-#   export VAULT_ADDR=http://vault.<tailnet>.ts.net:8200 VAULT_TOKEN=<admin token>
+#   export VAULT_ADDR=http://<vault machine>.<tailnet>.ts.net:8200 VAULT_TOKEN=<admin token>
 #   ./vault/import-from-k8s.sh
 # Values go straight from kubectl into `vault kv put` (key=- reads stdin), so
 # they are never printed, never in a file and never in shell history.

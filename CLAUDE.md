@@ -776,13 +776,18 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   Cloudflare exposure rejected: Vault has no public users). Roye sets up the
   container himself from `vault/compose/` (Claude wrote it). Runbook:
   `vault/README.md`. NOT applied yet; live applies need Roye's go.
-  Built: `vault/compose` (tailscale sidecar `tailscale/tailscale:v1.104.4`
-  as device "vault", tag:vault, Vault `hashicorp/vault:2.0.4` with
-  `network_mode: service:tailscale` = no host ports; `vault.hcl` Raft at
+  Built: `vault/compose` (Roye's LXC runs Tailscale itself, so no sidecar:
+  Vault `hashicorp/vault:2.0.4` published on 127.0.0.1:8200 only, exposed to
+  the tailnet by `tailscale serve --bg --tcp 8200 tcp://127.0.0.1:8200`;
+  device tagged tag:vault; `vault.hcl` Raft at
   /vault/file in a named volume, disable_mlock, awskms seal from env,
   unauthenticated metrics; backup service: nightly 03:45 UTC raft snapshot to
   BACKUP_DIR, 14 days, periodic token with policy raft-snapshot; `.env` from
-  `.env.example`, gitignored). Tested locally (no KMS): init, unseal, KV,
+  `.env.example`, gitignored; backup uses network_mode service:vault). Applied
+  2026-11-06 by Roye: terraform/vault (KMS + IAM + ESO, see walkthrough.md AWS
+  log). Tailscale ACL lesson: Roye replaced the allow-all grant with the Vault
+  grant and cut kubectl/SSH over Tailscale; fixed by putting allow-all back
+  next to it. Tested locally (no KMS): init, unseal, KV,
   snapshot, metrics all OK. `terraform/vault`: KMS key (prevent_destroy,
   alias tripsync-vault-unseal) + IAM user tripsync-vault-unseal (Encrypt/
   Decrypt/DescribeKey on that key) + access key as outputs for .env; ESO

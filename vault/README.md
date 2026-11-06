@@ -13,8 +13,8 @@ same names and keys, so no app changes.
 ```
    Vault machine (not a k3s node)             AWS
   ┌──────────────────────────────┐        ┌───────────────────┐
-  │ tailscale ── device "vault"  │        │ KMS: auto-unseal  │◄─┐
-  │ vault (Raft, named volume) ──┼────────┼───────────────────┘  │
+  │ tailscale (on the LXC) ─ serve│        │ KMS: auto-unseal  │◄─┐
+  │ vault (127.0.0.1:8200) ──────┼────────┼───────────────────┘  │
   │ backup (nightly snapshot)    │                               │
   └──────────────▲───────────────┘                               │
                  │ Tailscale only (tag:vault, port 8200)         │
@@ -52,15 +52,20 @@ machine only).
 ## Setup, in order
 
 1. **Tailscale ACL** (admin console, access controls): a tag `tag:vault`
-   (owner: you), and rules letting your devices, the k3s nodes and `tag:k8s`
-   (the EKS proxy) reach `tag:vault:8200`. Nothing else may reach it.
+   (owner: you) on the Vault machine's device (Machines -> ... -> Edit ACL
+   tags), and a grant letting your devices, the k3s nodes and `tag:k8s` (the
+   EKS proxy) reach `tag:vault` on tcp:8200. Only effective once the default
+   allow-all grant is replaced by specific grants: removing allow-all alone
+   cuts every other Tailscale path (kubectl, SSH, Grafana) - list those too.
 2. **AWS + ESO:** `terraform -chdir=terraform/vault init && terraform -chdir=terraform/vault apply`
    (KMS key + the unseal IAM user, and ESO in k3s).
-3. **The container**, on the Vault machine (Docker + compose installed):
-   copy `vault/compose/`, `cp .env.example .env`, fill in `TS_AUTHKEY` and the
-   three KMS values (`terraform -chdir=terraform/vault output -raw ...`, see
-   `.env.example`), `docker compose up -d`. The machine needs `/dev/net/tun`
-   (in a Proxmox LXC: enable TUN for the container).
+3. **The container**, on the Vault machine (an LXC with Tailscale and Docker
+   installed; Proxmox: features nesting + keyctl, TUN for Tailscale):
+   copy `vault/compose/`, `cp .env.example .env`, fill in the three KMS values
+   (`terraform output -raw ...` inside `terraform/vault`; the secret with
+   `| Set-Clipboard` so it's never on screen), `docker compose up -d vault`.
+   Then once: `sudo tailscale serve --bg --tcp 8200 tcp://127.0.0.1:8200`
+   (Vault listens on 127.0.0.1 only; this is the only way in).
 4. **Initialize, once:** `docker compose exec vault vault operator init`.
    With auto-unseal this prints **recovery keys** (only for a few admin
    operations, never for unsealing) and the **initial root token**. Both go in
@@ -68,14 +73,14 @@ machine only).
    itself after every restart.
 5. **Configuration** (KV mount, policies, logins, ClusterSecretStore, Discord
    ExternalSecret, Prometheus scrape + alerts), from a machine with kubectl:
-   `export VAULT_ADDR=http://vault.<tailnet>.ts.net:8200 VAULT_TOKEN=<root token>`
+   `export VAULT_ADDR=http://<vault machine>.<tailnet>.ts.net:8200 VAULT_TOKEN=<root token>`
    `terraform -chdir=terraform/vault-config apply -var vault_addr=http://<Vault's Tailscale IP>:8200 -var k3s_api_url=https://<control node LAN IP>:6443`
    (pods can't resolve MagicDNS names, hence the IP; the API URL must be an
    address in the k3s API certificate).
 6. **Backup token:** `docker compose exec vault vault token create -policy=raft-snapshot -period=768h -orphan -field=token`
    (with `VAULT_TOKEN` set) into `.env` as `VAULT_BACKUP_TOKEN`, set
    `BACKUP_DIR` (ideally the NFS share mounted on that machine),
-   `docker compose up -d` again.
+   `docker compose up -d` (now with the backup service).
 7. **Copy today's secrets in** (values never printed): `./vault/import-from-k8s.sh`
 8. The chart's ExternalSecrets (`values-k3s.yaml`, `externalSecrets.enabled`)
    now find the store and take over `openrouteservice` and `cloudflared-token`
@@ -90,7 +95,7 @@ machine only).
 1. Tailscale admin console: an OAuth client (scopes `devices:core`,
    `auth_keys`; tag `tag:k8s-operator`), tag owners for `tag:k8s-operator`
    and `tag:k8s`, and the ACL rule `tag:k8s` -> `tag:vault:8200`.
-2. `TF_VAR_vault_enabled=true TF_VAR_vault_tailnet_host=vault.<tailnet>.ts.net
+2. `TF_VAR_vault_enabled=true TF_VAR_vault_tailnet_host=<vault machine>.<tailnet>.ts.net
    TF_VAR_tailscale_oauth_client_id=... TF_VAR_tailscale_oauth_client_secret=...
    terraform -chdir=terraform/aws apply`
 3. `terraform -chdir=terraform/vault-config apply ... -var eks_oidc_issuer=$(terraform -chdir=terraform/aws output -raw oidc_issuer)`
@@ -106,7 +111,7 @@ machine only).
   or at once: `kubectl -n tripsync annotate externalsecret openrouteservice force-sync=$(date +%s) --overwrite`.
   Pods read env vars only at start: `kubectl -n tripsync rollout restart deploy/tripsync-backend`.
 - Undo a bad change: KV v2 keeps versions, `vault kv rollback -mount=secret -version=<n> <path>`.
-- UI: `http://vault.<tailnet>.ts.net:8200` (tailnet only).
+- UI: `http://<vault machine>.<tailnet>.ts.net:8200` (tailnet only).
 - Upgrade: change the image tag in `docker-compose.yml` (both services),
   `docker compose up -d`, check `vault status`.
 
