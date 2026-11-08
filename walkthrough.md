@@ -330,6 +330,54 @@ undoing that one (history intact, Argo sees a normal commit); going back to
 an old hash would be `git reset`, which rewrites history: not on main.
 **Topic 2 done.**
 
+## 3. Kubernetes basics (2026-11-08)
+
+**Covered.** Pod (containers sharing an IP + volumes; disposable: new
+name/IP each time; backend pod = init containers `migrate`, `storage-init`,
+then `backend`). ReplicaSet (keeps N identical pods). Deployment (manages
+ReplicaSets: each new pod template = a new RS; live example: today's 3
+non-root steps = 3 frontend RSs, old ones kept at 0, `revisionHistoryLimit:
+3`). Default rolling update: maxSurge/maxUnavailable 25% -> with 1 replica,
+surge 1 / unavailable 0: new pod first, old removed only once the new one is
+Ready. Probes: liveness `/health/live` (stuck? -> restart; deliberately no DB
+check), readiness `/health/ready` (`SELECT 1`; fail -> out of the Service,
+no restart). StatefulSet (Postgres, Garage: fixed name `-0`, own PVC, never
+two copies). Service (label selector; ClusterIP vs headless). Ingress (two
+objects because rewrite-target applies to all paths; `/api/metrics` blocked).
+AWS: same objects; EC2 node group, VPC CNI pod IPs, EBS gp3 via CSI,
+ingress-nginx Service type LoadBalancer -> AWS ELB.
+
+**Roye's answers and corrections.**
+1. *Delete the backend pod.* Mostly: a new pod, not the same one, same
+   image. Precision: the **ReplicaSet** notices (0 of 1 running) and makes
+   it, not the Deployment directly. New name and IP, same template; the init
+   containers run again (`flask db upgrade` is then a no-op).
+2. *Postgres down 2 min.* Right: liveness keeps passing (no restart),
+   readiness fails (pod out of the Service; the ingress answers 503 fast).
+   Roye's question: *Postgres has its own readiness probe (`pg_isready`), why
+   does the backend check too?* Each probe describes **its own pod**:
+   Postgres's decides whether the Postgres Service sends to it; it tells
+   nothing to the backend. The backend's answers "can THIS pod serve
+   requests", which also fails on backend-side problems (wrong password,
+   network, connection pool). Without it the ingress keeps sending users to a
+   backend that answers 500s.
+3. *Why a new RS per deploy?* Misconception: "the new RS comes from a new
+   Deployment". There is **one Deployment** all along (tripsync-backend, 37
+   days old); a deploy changes its pod template, and it makes a new RS for
+   the new template. Roye's question: *on revert, old RS or new?* The **old
+   RS**: the Deployment finds the RS whose template matches
+   (`pod-template-hash`) and scales it back up, if it's still kept (3). Live:
+   reverting "Deploy backend 16b59c8" would scale
+   `tripsync-backend-58cff9668` (192bf28) from 0 to 1. Demo tip: run
+   `kubectl -n tripsync get rs -w` during the revert to show it.
+4. *How a Service finds pods.* Right: label selector; not-Ready pods get no
+   traffic (Kubernetes keeps the endpoint list, EndpointSlice, up to date).
+5. *Why StatefulSet.* Right: stable storage + only one at a time.
+   Correction: one **in total** (replicas 1), not "per worker".
+6. *A deploy step by step.* Right; plus: the new pod must finish its init
+   containers and pass readiness before the old pod gets SIGTERM (grace
+   period), and the Service moves traffic once the new pod is Ready.
+
 ## Collected for later topics
 
 Things that happened between sessions, to go through when we reach the topic.
