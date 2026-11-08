@@ -99,20 +99,25 @@ resource "kubernetes_cron_job_v1" "vault_backup" {
               run_as_group    = 1000
             }
             container {
-              name    = "snapshot"
-              image   = "hashicorp/vault:2.0.4" # the same version as the server
+              name = "snapshot"
+              # curl against Vault's HTTP API, not the vault CLI: the
+              # hashicorp/vault image's binary is 513 MB, and under a 128Mi
+              # limit the kernel kept evicting and re-reading it from disk
+              # (the Alloy-incident pattern, 2026-11-08, stopped after a
+              # minute). These are the same two API calls the CLI makes.
+              image   = "curlimages/curl:8.11.1"
               command = ["sh", "-c"]
               # The token is trimmed first: pasting or piping it into
-              # `vault kv put` (PowerShell adds \r\n) leaves a line ending,
-              # which Vault rejects ("non-printable characters"). Written to
-              # .tmp first, so a failed snapshot never replaces a good one.
+              # `vault kv put` (PowerShell adds \r\n) leaves a line ending.
+              # Written to .tmp first, so a failed snapshot never replaces a
+              # good one.
               args = [<<-EOT
                 set -eu
-                VAULT_TOKEN=$(printf %s "$VAULT_TOKEN" | tr -d '\r\n ')
-                export VAULT_TOKEN
-                vault token renew >/dev/null
+                h="X-Vault-Token: $(printf %s "$VAULT_TOKEN" | tr -d '\r\n ')"
+                curl -fsS -X POST -H "$h" "$VAULT_ADDR/v1/auth/token/renew-self" >/dev/null
                 file=/backups/vault-$(date +%F).snap
-                vault operator raft snapshot save "$file.tmp"
+                curl -fsS -H "$h" -o "$file.tmp" "$VAULT_ADDR/v1/sys/storage/raft/snapshot"
+                test -s "$file.tmp"
                 mv "$file.tmp" "$file"
                 find /backups -name 'vault-*.snap' -mtime +14 -delete
                 ls -lh /backups | tail -3
