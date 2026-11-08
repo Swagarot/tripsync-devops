@@ -191,3 +191,55 @@ Cloudflare Tunnel; Jenkins deploys with `helm upgrade` (parameter
 lines. Details in topics 5, 6 and 10.
 
 **Doc fixes found:** none yet.
+
+## Collected for later topics
+
+Things that happened between sessions, to go through when we reach the topic.
+
+### For 11b (Vault): backups to NFS (2026-11-08)
+
+- **Two snapshot copies, each with its own token** (policy `raft-snapshot`:
+  take a snapshot + renew itself, nothing else; periodic 768h, so each run
+  renews it and it dies 32 days after backups stop):
+  1. the `backup` service in `vault/compose/docker-compose.yml`, into
+     `./backups` on the LXC (undoes a deleted secret, not a lost machine);
+  2. the `vault-backup` CronJob in k3s (`terraform/vault-config/backup.tf`),
+     04:15 Israel time onto the NFS server, 14 kept, alert
+     `VaultBackupMissing` (>26 h, or never succeeded).
+- **Why k3s pulls instead of the LXC mounting NFS:** an unprivileged LXC
+  can't mount NFS: the kernel refuses NFS mounts inside a user namespace
+  (which is what "unprivileged" means), and a Docker NFS volume asks the same
+  kernel. `features: nfs=1` only works for privileged LXCs, which would undo
+  the isolation. Mounting on the Proxmox host and bind-mounting wasn't an
+  option for Roye's setup. k3s already writes to NFS (`nfs-client`), so it
+  fetches the snapshot over Tailscale.
+- **Its token lives in Vault** (`secret/vault/backup`) and External Secrets
+  syncs it in: no new exposure, k3s's policy can already read all of
+  `secret/`. The snapshot is encrypted by Vault itself, so it is safe on NFS;
+  restoring needs the AWS KMS key.
+- Verified live 2026-11-08: `vault-2026-11-08.snap` (40.7 KB) on NFS, job 6 s.
+
+### For 12 (incidents): three bugs getting that CronJob to run (2026-11-08)
+
+1. **Token with a line ending.** Piping `vault token create` into
+   `vault kv put` in PowerShell added `\r\n` -> Vault: "contains
+   non-printable characters". Fix: the job trims the token.
+2. **The 513 MB binary thrash.** The job used the `hashicorp/vault` image;
+   its `vault` binary is 513 MB, the pod limit was 128 MiB, so the kernel kept
+   evicting the binary's pages and reading them back (13k major page faults
+   in ~3 min, `vault token renew` "hanging" with no logs). The same pattern
+   as the Alloy incident (2026-11-06): a memory limit smaller than what the
+   process needs resident = disk reads, not an OOM kill. Caught and stopped
+   within minutes. Fix: `curlimages/curl` (about 10 MB) calling the two API
+   endpoints the CLI uses (`POST /v1/auth/token/renew-self`,
+   `GET /v1/sys/storage/raft/snapshot`). Lesson: a memory limit must cover
+   the binary's resident size too; check `pgmajfault` in
+   `/sys/fs/cgroup/memory.stat` when a pod is slow without being OOM-killed.
+3. **HTTP 500 "no namespace".** A still-malformed token (Windows
+   PowerShell 5.1 re-encodes text piped between programs). Vault answers 500
+   for a token it can't even parse (a valid token without permission would be
+   403). Fix: make the token and store it inside the Vault container in one
+   `sh -c '... | vault kv put ...'`, PowerShell never touching it, then force
+   an ESO refresh (`kubectl annotate externalsecret ... force-sync=...`). The
+   broken token never worked and expires by itself in 32 days.
+   Lesson: pipe secrets between programs in bash, not PowerShell 5.1.
