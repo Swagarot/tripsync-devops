@@ -15,6 +15,14 @@ spec:
       labels:
         app: tripsync-frontend
     spec:
+      securityContext:
+        # Ports below 1024 normally need root. This lets the non-root nginx
+        # (nginx-unprivileged image, uid 101) keep listening on 80, inside
+        # this pod's own network namespace only (a "safe" sysctl; Docker sets
+        # the same by default, so compose needs nothing).
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
       containers:
         - name: frontend
           image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
