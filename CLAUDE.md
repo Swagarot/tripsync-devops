@@ -853,6 +853,10 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   `secret/vault/backup` (token), CronJob 04:15 Israel time pulling the
   snapshot over Tailscale, 14 kept; alert VaultBackupMissing (>26 h or never).
   The compose backup service stays as the local copy (./backups on the LXC).
+  LIVE 2026-11-08: first snapshot on NFS (40.7 KB). The job uses curl, not
+  the vault CLI (513 MB binary thrashed under 128Mi); tokens must be made
+  inside the Vault container, not piped through PowerShell 5.1 (it corrupted
+  the token -> HTTP 500 "no namespace"). Walkthrough has the details.
 - **Constraint (Roye 2026-11-06): the teacher gets the repos and deploys the
   k3s version himself, without our keys.** So everything that needs a key or
   Vault must stay optional and degrade gracefully (ORS -> straight lines,
