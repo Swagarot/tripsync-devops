@@ -13,8 +13,8 @@ This file is committed: no secrets, tokens, account IDs or internal IPs.
 |---|---|---|
 | 1 | The app and the 3 repos | done 2026-11-06 |
 | 2 | Docker images + compose | done 2026-11-08 |
-| 3 | Kubernetes basics: Pod / ReplicaSet / Deployment / Service / Ingress, probes | in progress 2026-11-08 |
-| 4 | Helm chart, template by template | |
+| 3 | Kubernetes basics: Pod / ReplicaSet / Deployment / Service / Ingress, probes | mostly done 2026-11-08 (re-ask rollback/hashes) |
+| 4 | Helm chart, template by template | next |
 | 5 | Jenkins pipelines, stage by stage | |
 | 6 | GitOps with Argo CD | |
 | 7 | Networking: Cloudflare Tunnel, Tailscale, NodePorts, Grafana | |
@@ -401,6 +401,42 @@ ingress-nginx Service type LoadBalancer -> AWS ELB.
   and all share whatever claim the template names, so no per-pod volume, and
   a rolling update would mount it twice (a Longhorn RWO volume can't even
   attach on a second node).
+
+**Rollbacks and hashes (2026-11-08; Roye: "mostly got it, keep asking").**
+- *Does the old RS store the git hash?* No: the RS knows nothing about git.
+  Three different hashes: the **devops commit** (git's ID for a change;
+  Argo CD records the last one it synced in `status.sync.revision`); the
+  **image tag** (`192bf28`, a backend-repo SHA that Jenkins uses as the
+  image name; stored in the RS's frozen pod template as
+  `image: swagarot/tripsync-backend:192bf28`, in `migrate`, `storage-init`
+  and `backend`); the **pod-template-hash** (`58cff9668`, Kubernetes' own
+  hash of the template's contents, the RS's label and name suffix). To
+  Kubernetes the tag is just text; it means "commit" only because Jenkins
+  names images that way. Revert brings back the same text -> same template
+  -> same hash -> the same RS.
+- *`--no-edit`?* Only skips the editor for the commit message (uses
+  `Revert "Deploy backend ..."`). And `git revert X` **undoes X**, it doesn't
+  "go back to X": later commits (e.g. the frontend deploy after it) stay.
+  Going back to an old state (`git reset`) would take every difference since,
+  both apps and chart changes.
+- *Revert to a very old version with no RS left?* (1) Kubernetes just makes a
+  new RS (reuse is only a shortcut), as long as the image is still on Docker
+  Hub. (2) git: reverting an old deploy commit **conflicts**, every later
+  deploy edited the same line; for an old version write the old tag and
+  commit "Roll back backend to X". (3) The real limit, the **database**:
+  migrations only go forward. Rolling back past one (e.g. before ad67625,
+  which added `sessions`) -> old code's `flask db upgrade` fails ("Can't
+  locate revision a7d2e5f8c9b1") -> init container fails -> old pod keeps
+  serving, rollback doesn't happen. Code rolls back freely, schema doesn't.
+  Demo: revert the latest backend deploy (16b59c8 -> 192bf28, no migration).
+- Roye wants to try the revert himself (practice for the demo; steps were
+  given: watch `kubectl -n tripsync get rs -l app=tripsync-backend -w`,
+  `git revert --no-edit <Deploy commit>`, push, then revert the revert).
+
+**To re-ask next session (Roye's request):** the three hashes and which one
+picks the RS; why a revert reuses an RS but a new deploy makes one; revert vs
+reset; why rollback can't cross a migration; what `kubectl get rs` shows
+during a revert.
 
 ## Collected for later topics
 
