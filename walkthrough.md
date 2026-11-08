@@ -258,6 +258,45 @@ is small on purpose; the rest are extensions: Flask-SQLAlchemy (ORM),
 Flask-Migrate (Alembic migrations), Flask-JWT-Extended (tokens),
 Flask-Limiter (rate limits), prometheus-flask-exporter (/metrics).
 
+**Fix from Q5, done 2026-11-08 (3 steps, so the site never broke):**
+non-root nginx. Linux lets only root bind ports < 1024; instead of moving
+nginx to 8080 (image + nginx.conf + chart + compose), the frontend pod got
+the safe sysctl `net.ipv4.ip_unprivileged_port_start=0` (only inside its own
+network namespace). (1) devops 932a0ea: sysctl (old root image unaffected);
+(2) frontend 1a41f04: `nginxinc/nginx-unprivileged:alpine` (uid 101), still
+port 80; (3) devops: `runAsNonRoot` (first would have refused the old root
+image). Proven: without the sysctl, non-root nginx fails `bind() to
+0.0.0.0:80 (Permission denied)`. Also backend 16b59c8: `useradd` moved
+above the COPYs (cached layer).
+
+**Quiz round 1 (2026-11-08).**
+1. *`latest` and the revert demo.* Right: nothing changes in git's file, so
+   Argo sees no diff and nothing happens. Plus: even a restarted pod would
+   pull the newest `latest`, not the old version.
+2. *Why copy requirements.txt first?* Unsure. Re-explained: Docker runs the
+   steps top to bottom and caches each result; at the first step whose input
+   changed it redoes that step and everything below. Code changes every
+   commit, dependencies rarely; dependencies first = a code edit reuses the
+   cached `pip install` (seconds instead of a minute).
+3. *Flask vs Gunicorn.* Right: Flask = the framework the code is written
+   with; Gunicorn = the running server, listens on 5000 and calls the app.
+4. *Why non-root can't use 80.* Guessed "taken/default port". Re-explained:
+   ports 0-1023 are privileged in Linux (only root or CAP_NET_BIND_SERVICE),
+   historically so a normal user on a shared server couldn't pose as the web
+   server. Not "taken": every container has its own network namespace and
+   its own port 80. Order: each step must work with both the old and new
+   image.
+5. *Compose roles.* Unsure. Re-explained: `gateway` = Ingress; `migrate` =
+   init containers (same backend image, `flask db upgrade` + `storage-init`,
+   exits); `service_completed_successfully` = the backend starts only if
+   migrate exited 0.
+6. *Where images go.* Partly: Argo CD never watches Docker Hub. Chain:
+   Jenkins builds -> pushes to Docker Hub -> commits the new tag to
+   values-k3s.yaml -> Argo CD sees **git** -> updates the Deployment ->
+   new pod -> the node's **kubelet** pulls the image. EKS: Jenkins runs
+   `helm upgrade`, nodes pull from Docker Hub via the NAT gateway; proper
+   AWS = ECR.
+
 ## Collected for later topics
 
 Things that happened between sessions, to go through when we reach the topic.
