@@ -102,10 +102,14 @@ resource "kubernetes_cron_job_v1" "vault_backup" {
               name    = "snapshot"
               image   = "hashicorp/vault:2.0.4" # the same version as the server
               command = ["sh", "-c"]
-              # Written to .tmp first, so a failed snapshot never replaces a
-              # good one.
+              # The token is trimmed first: pasting or piping it into
+              # `vault kv put` (PowerShell adds \r\n) leaves a line ending,
+              # which Vault rejects ("non-printable characters"). Written to
+              # .tmp first, so a failed snapshot never replaces a good one.
               args = [<<-EOT
                 set -eu
+                VAULT_TOKEN=$(printf %s "$VAULT_TOKEN" | tr -d '\r\n ')
+                export VAULT_TOKEN
                 vault token renew >/dev/null
                 file=/backups/vault-$(date +%F).snap
                 vault operator raft snapshot save "$file.tmp"
