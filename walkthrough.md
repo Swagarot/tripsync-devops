@@ -297,6 +297,27 @@ above the COPYs (cached layer).
    `helm upgrade`, nodes pull from Docker Hub via the NAT gateway; proper
    AWS = ECR.
 
+**Quiz round 2 (2026-11-08).**
+- *a. Only trips.py changed / Pillow bumped.* Right both: no pip; then pip
+  and every step after it.
+- *b. Two containers on port 80.* Right: each has its own network namespace
+  (its own network stack and ports; not a whole machine, the kernel is
+  shared). Correction: being on the same Docker network is fine, each
+  container has its own IP. The only clash is **publishing** the same host
+  port (`ports: "8080:80"` twice): the host has one 8080.
+- *c. Broken migration.* Partly. Compose: migrate exits non-zero, the backend
+  never starts. k3s: the new pod's init container fails (`Init:Error` /
+  `Init:CrashLoopBackOff`), it never becomes Ready, so the rolling update
+  never finishes and the **old pod keeps serving: site up**. Postgres runs
+  each migration in a transaction, so a failed one leaves no half-changed
+  schema. Fix the GitOps way: `git revert` the "Deploy backend" commit (or
+  fix forward with a new commit).
+- *d. Order.* Push and commit swapped: Jenkins **pushes the image first**,
+  then commits the tag (the other way, Argo could deploy a tag that doesn't
+  exist yet -> `ImagePullBackOff`). And the pod object exists before the
+  pull: Argo syncs -> Deployment changes -> new pod created and scheduled ->
+  that node's kubelet pulls -> container starts.
+
 ## Collected for later topics
 
 Things that happened between sessions, to go through when we reach the topic.
