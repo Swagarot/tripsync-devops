@@ -16,6 +16,10 @@ spec:
         app: tripsync-frontend
     spec:
       securityContext:
+        # The image runs as nginx's uid 101 (nginx-unprivileged, see the
+        # frontend Dockerfile). Kubernetes refuses to start it if an image
+        # ever tries to run as root, like the backend.
+        runAsNonRoot: true
         # Ports below 1024 normally need root. This lets the non-root nginx
         # (nginx-unprivileged image, uid 101) keep listening on 80, inside
         # this pod's own network namespace only (a "safe" sysctl; Docker sets
