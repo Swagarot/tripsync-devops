@@ -8,6 +8,11 @@
 # Safe to run again: each run writes a new version (KV v2 keeps the old ones).
 set -euo pipefail
 
+# A token typed or pasted in a Windows console ends with an invisible \r,
+# which Vault answers with a 500 ("failed to look up namespace from the
+# token"). Trim it.
+export VAULT_TOKEN="$(printf %s "${VAULT_TOKEN:-}" | tr -d '\r\n ')"
+
 copy() { # <namespace> <secret> <key in secret> <vault path> <key in vault>
   local ns=$1 secret=$2 key=$3 path=$4 field=$5
   if ! kubectl --context default -n "$ns" get secret "$secret" >/dev/null 2>&1; then
