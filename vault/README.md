@@ -80,10 +80,18 @@ machine only).
    `terraform -chdir=terraform/vault-config apply -var vault_addr=http://<Vault's Tailscale IP>:8200 -var k3s_api_url=https://<control node LAN IP>:6443`
    (pods can't resolve MagicDNS names, hence the IP; the API URL must be an
    address in the k3s API certificate).
-6. **Backup token:** `docker compose exec vault vault token create -policy=raft-snapshot -period=768h -orphan -field=token`
-   (with `VAULT_TOKEN` set) into `.env` as `VAULT_BACKUP_TOKEN`, set
-   `BACKUP_DIR` (ideally the NFS share mounted on that machine),
-   `docker compose up -d` (now with the backup service).
+6. **Backup tokens** (two, so either can be revoked alone), each made with
+   `docker compose exec -e VAULT_TOKEN=<root token> vault vault token create -policy=raft-snapshot -period=768h -orphan -field=token`:
+   - local copy: into `.env` as `VAULT_BACKUP_TOKEN`, then
+     `mkdir -p backups && chown 100:1000 backups` and `docker compose up -d`
+     (now with the backup service; snapshots in `./backups` on the LXC);
+   - NFS copy: `vault kv put -mount=secret vault/backup token=-` (paste it,
+     Enter, Ctrl-D). External Secrets brings it to the `vault-backup` CronJob
+     in k3s, which pulls a snapshot over Tailscale every night onto the NFS
+     server (`terraform/vault-config/backup.tf`). Why not mount NFS here: an
+     unprivileged LXC can't (the kernel refuses NFS mounts in a user
+     namespace). First run by hand:
+     `kubectl -n vault-backup create job --from=cronjob/vault-backup first`.
 7. **Copy today's secrets in** (values never printed): `./vault/import-from-k8s.sh`
 8. The chart's ExternalSecrets (`values-k3s.yaml`, `externalSecrets.enabled`)
    now find the store and take over `openrouteservice` and `cloudflared-token`
@@ -126,8 +134,12 @@ machine only).
   `vault` device online in the Tailscale admin console?
 - In both cases apps keep working on the Secrets they have; only changes stop
   syncing.
+- **VaultBackupMissing:** no snapshot reached NFS for 26 h:
+  `kubectl -n vault-backup get jobs`, then the failed Job's logs (token expired
+  after 32 days without a run? Vault unreachable?).
 - **Restore:** `vault operator raft snapshot restore -force <file>` from
-  `BACKUP_DIR` (one per night, 14 days). It unseals with the same KMS key, so
+  `./backups` on the LXC or the `vault-backups` folder on the NFS server
+  (one per night, 14 days each). It unseals with the same KMS key, so
   the key must still exist (`prevent_destroy`, and AWS waits 30 days before
   deleting a KMS key).
 - **Lost the root token:** `vault operator generate-root` with the recovery keys.

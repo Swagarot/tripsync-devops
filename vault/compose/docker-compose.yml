@@ -37,9 +37,10 @@ services:
 
   # Nightly Raft snapshot at 03:45 UTC (the container's clock), 14 days kept.
   # The whole Vault, still encrypted: restoring it needs the same KMS key.
-  # There are no Longhorn-style copies here, so this is the only protection
-  # against a lost disk or a deleted secret: point BACKUP_DIR at another
-  # machine (the NFS share). Started once VAULT_BACKUP_TOKEN is in .env.
+  # This copy stays on the LXC's disk (undoes a deleted secret); the copy on
+  # the NFS server is pulled nightly by a k3s CronJob
+  # (terraform/vault-config/backup.tf), since an unprivileged LXC can't mount
+  # NFS. Started once VAULT_BACKUP_TOKEN is in .env.
   backup:
     image: hashicorp/vault:2.0.4
     network_mode: service:vault   # reaches Vault at 127.0.0.1:8200

@@ -60,6 +60,19 @@ resource "kubernetes_manifest" "vault_rules" {
               description = "Prometheus can't scrape Vault over Tailscale for 10 minutes. Is the container running (docker compose ps on the Vault machine) and the vault device online in Tailscale? Apps keep their current Secrets."
             }
           },
+          {
+            # The NFS copy (backup.tf) hasn't succeeded for over a day. A
+            # single failed Job is also reported by the built-in KubeJobFailed;
+            # this catches "silently not running" (and a never-run CronJob).
+            alert  = "VaultBackupMissing"
+            expr   = "time() - kube_cronjob_status_last_successful_time{namespace=\"vault-backup\", cronjob=\"vault-backup\"} > 26 * 3600 or absent(kube_cronjob_status_last_successful_time{namespace=\"vault-backup\", cronjob=\"vault-backup\"})"
+            for    = "30m"
+            labels = { severity = "warning" }
+            annotations = {
+              summary     = "Vault backup is overdue"
+              description = "No Vault snapshot reached the NFS server for over 26 hours. Check the Jobs in namespace vault-backup (an expired token or an unreachable Vault are the usual causes)."
+            }
+          },
         ]
       }]
     }

@@ -837,6 +837,22 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   reaching a 100.x Tailscale IP through the node (expected to work: nodes run
   Tailscale, pod traffic is masqueraded).
   Teacher doc: `docs/deploy-yourself.md` (quick path NOT yet tested end to end).
+  **Live progress 2026-11-06:** Vault container up on Roye's unprivileged LXC
+  ("vault", Docker in LXC on Proxmox), initialized (recovery keys + root token
+  in Roye's password manager), auto-unseal via KMS works, reachable over
+  tailscale serve; terraform/vault-config 13/14 applied (ClusterSecretStore
+  `vault` Ready "store validated" = ESO -> Vault -> k3s TokenReview works;
+  k3s_api_url = control node's Tailscale IP, the LXC can't reach the LAN;
+  values in gitignored terraform.tfvars). OPEN: Discord ExternalSecret (last
+  resource), backup tokens, import script (step 7). **Vault backups to NFS
+  (decided 2026-11-08, option "k3s pulls"):** the LXC can't mount NFS
+  (unprivileged = kernel refuses NFS mounts in a user namespace; Roye's
+  Proxmox host can't mount it either), so `terraform/vault-config/backup.tf`
+  adds namespace `vault-backup`: nfs-client PVC (prevent_destroy), an
+  ExternalSecret for a 2nd raft-snapshot token stored in Vault at
+  `secret/vault/backup` (token), CronJob 04:15 Israel time pulling the
+  snapshot over Tailscale, 14 kept; alert VaultBackupMissing (>26 h or never).
+  The compose backup service stays as the local copy (./backups on the LXC).
 - **Constraint (Roye 2026-11-06): the teacher gets the repos and deploys the
   k3s version himself, without our keys.** So everything that needs a key or
   Vault must stay optional and degrade gracefully (ORS -> straight lines,
