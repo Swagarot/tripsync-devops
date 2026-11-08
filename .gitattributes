@@ -1,0 +1,2 @@
+# Shell scripts must keep LF: bash fails on  ("$'': command not found").
+*.sh text eol=lf
