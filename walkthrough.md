@@ -378,6 +378,30 @@ ingress-nginx Service type LoadBalancer -> AWS ELB.
    containers and pass readiness before the old pod gets SIGTERM (grace
    period), and the Service moves traffic once the new pod is Ready.
 
+**Round 2 (2026-11-08).**
+- *a. A revert, git to pod.* Right outline, Roye unsure of the middle.
+  Full chain: (1) `git revert` makes a **new** devops commit (its own hash)
+  whose only change is `backend.image.tag: 16b59c8` -> `192bf28` in
+  values-k3s.yaml (192bf28 = a backend-repo commit = the image tag); (2)
+  Argo CD **polls** git (nothing is sent to it), renders the chart, diffs:
+  only the backend Deployment's image differs; (3) it patches that
+  Deployment's pod template; (4) the Deployment hashes the template (label
+  `pod-template-hash`), finds RS `58cff9668` with the same hash and scales it
+  0 -> 1 instead of making a new RS (same template = same RS); (5) that RS
+  creates a **new pod** from the old template; (6) kubelet pulls (probably
+  cached), init containers, readiness; (7) the Deployment scales the current
+  RS 1 -> 0 and the old pod gets SIGTERM.
+- *b. Wrong DB password.* Right: backend readiness fails (Postgres's own
+  passes). Users: the frontend still loads (its own pod), but every `/api`
+  call gets 503 from the ingress (no Ready backend); the app shows what the
+  phone has cached offline; login fails.
+- *c. Delete postgres-0.* Right: the StatefulSet recreates `-0` and
+  re-attaches **its** PVC `data-tripsync-postgres-0` (from
+  volumeClaimTemplates), same data. A Deployment's pods have random names
+  and all share whatever claim the template names, so no per-pod volume, and
+  a rolling update would mount it twice (a Longhorn RWO volume can't even
+  attach on a second node).
+
 ## Collected for later topics
 
 Things that happened between sessions, to go through when we reach the topic.
