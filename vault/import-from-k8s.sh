@@ -10,8 +10,10 @@ set -euo pipefail
 
 # A token typed or pasted in a Windows console ends with an invisible \r,
 # which Vault answers with a 500 ("failed to look up namespace from the
-# token"). Trim it.
-export VAULT_TOKEN="$(printf %s "${VAULT_TOKEN:-}" | tr -d '\r\n ')"
+# token"). Trim it. Unset = the CLI uses the token `vault login` saved.
+if [ -n "${VAULT_TOKEN:-}" ]; then
+  export VAULT_TOKEN="$(printf %s "$VAULT_TOKEN" | tr -d '\r\n ')"
+fi
 
 copy() { # <namespace> <secret> <key in secret> <vault path> <key in vault>
   local ns=$1 secret=$2 key=$3 path=$4 field=$5
