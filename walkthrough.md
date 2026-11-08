@@ -264,7 +264,7 @@ nginx to 8080 (image + nginx.conf + chart + compose), the frontend pod got
 the safe sysctl `net.ipv4.ip_unprivileged_port_start=0` (only inside its own
 network namespace). (1) devops 932a0ea: sysctl (old root image unaffected);
 (2) frontend 1a41f04: `nginxinc/nginx-unprivileged:alpine` (uid 101), still
-port 80; (3) devops: `runAsNonRoot` (first would have refused the old root
+port 80; (3) devops d70a805: `runAsNonRoot` (first would have refused the old root
 image). Proven: without the sysctl, non-root nginx fails `bind() to
 0.0.0.0:80 (Permission denied)`. Also backend 16b59c8: `useradd` moved
 above the COPYs (cached layer).
