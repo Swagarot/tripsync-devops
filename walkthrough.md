@@ -12,7 +12,7 @@ This file is committed: no secrets, tokens, account IDs or internal IPs.
 | # | Topic | Status |
 |---|---|---|
 | 1 | The app and the 3 repos | done 2026-11-06 |
-| 2 | Docker images + compose | next |
+| 2 | Docker images + compose | in progress 2026-11-08 |
 | 3 | Kubernetes basics: Pod / ReplicaSet / Deployment / Service / Ingress, probes | |
 | 4 | Helm chart, template by template | |
 | 5 | Jenkins pipelines, stage by stage | |
@@ -191,6 +191,72 @@ Cloudflare Tunnel; Jenkins deploys with `helm upgrade` (parameter
 lines. Details in topics 5, 6 and 10.
 
 **Doc fixes found:** none yet.
+
+## 2. Docker images + compose (2026-11-08)
+
+**Covered.** Image (read-only package: OS userland + runtime + code + start
+command) vs container (a running instance). Layers and the build cache: a step
+is reused if it and everything before it are unchanged, hence "copy the
+dependency list, install, then copy the code" in both Dockerfiles. Backend:
+`python:3.11-slim`, `.dockerignore` (no tests, .env, .git), user UID 10001,
+Gunicorn 1 worker x 4 threads (Prometheus counters live in process memory;
+scale with pods). Frontend: multi-stage, `node:24-alpine` builds (`npm ci` =
+exact lockfile versions), `nginx:alpine` serves `dist/` + `nginx.conf`.
+Compose = the stack on a laptop, each service standing in for a cluster
+piece: healthcheck = readiness probe, `migrate` = init containers,
+`gateway` = Ingress, service names = Services, named volumes = PVCs.
+
+**Side question: why do we need the root token / how does Vault work?**
+Secrets are encrypted on disk; that key is encrypted by the AWS KMS key
+(auto-unseal at start). Every access needs a token whose policies say what it
+may do (ESO: 1 h, read-only on `secret/`; backup tokens: snapshot only). The
+root token (made once by `vault operator init`) may do everything and never
+expires: needed only for setup (Terraform's mounts/policies/logins, the
+import). Normal practice: revoke after setup, regenerate from the recovery
+keys when needed (`vault operator generate-root`). Details in 11b.
+
+**Roye's answers and corrections.**
+1. *One line changed in app.py: what rebuilds?* "Only the code copy." Right
+   idea; precisely `COPY . .` **and every step after it** (a changed layer
+   invalidates all later ones), so also the `useradd` RUN, which could move
+   above the COPY. A changed `requirements.txt` re-runs `pip install` and
+   everything after it (the slow case).
+2. *What's in the frontend image?* Right: only the built HTML/JS/CSS (plus
+   nginx itself and `nginx.conf`); no Node, `node_modules`, source. Why it
+   matters: size (faster pulls on every node) and attack surface (fewer
+   programs and fewer CVEs for an attacker to use).
+3. *Why SHA tags, not just `latest`?* Roye: single source of truth, knew we
+   know which commit runs, wanted the full explanation. `latest` is a
+   **mutable** label: it points at a different image after every build, so
+   (a) Kubernetes rolls out only when the pod spec changes; same tag `latest`
+   = no change = no rollout; (b) nodes cache images, so two nodes can run two
+   different "latest"s; (c) no way back: the old `latest` is gone. A SHA tag
+   is **immutable** and maps pod -> image -> commit. Rollback = put the old
+   tag back: that is exactly what `git revert` of a "Deploy backend <sha>"
+   commit does (values-k3s.yaml gets the previous tag, Argo CD rolls it out:
+   Roye's live demo). `latest` is still pushed, only for a first install from
+   values.yaml defaults.
+4. *How does the backend find "postgres"?* Right: compose puts the project's
+   services on one network and Docker's built-in DNS resolves service names.
+   In k3s, CoreDNS resolves Service names to the Service's stable ClusterIP
+   (the chart's name is `tripsync-postgres`; full name
+   `tripsync-postgres.tripsync.svc.cluster.local`), which keeps working when
+   pods are replaced and get new IPs.
+5. *What user does the frontend run as?* Roye: "the same, probably". No:
+   `nginx:alpine` starts its master process as **root** (workers as user
+   `nginx`), and the chart's frontend Deployment has no `securityContext`.
+   A real gap (found 2026-11-08). Fix option: `nginxinc/nginx-unprivileged`
+   (runs as UID 101, listens on 8080) + chart port + `runAsNonRoot`.
+
+**Side question: what is Flask?** A Python package (`pip install Flask`,
+pinned in `requirements.txt`): a web *framework*, it maps URLs to Python
+functions (`@bp.get("/trips/<id>")`), parses requests, returns JSON. It is
+not the server: Gunicorn (also a package) is the production server that
+listens on port 5000 and calls the Flask app (`app:app`, via WSGI). Java
+comparison: Flask ~ a light Spring Boot / Javalin, Gunicorn ~ Tomcat. Flask
+is small on purpose; the rest are extensions: Flask-SQLAlchemy (ORM),
+Flask-Migrate (Alembic migrations), Flask-JWT-Extended (tokens),
+Flask-Limiter (rate limits), prometheus-flask-exporter (/metrics).
 
 ## Collected for later topics
 
