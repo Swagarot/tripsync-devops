@@ -859,6 +859,14 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   the vault CLI (513 MB binary thrashed under 128Mi); tokens must be made
   inside the Vault container, not piped through PowerShell 5.1 (it corrupted
   the token -> HTTP 500 "no namespace"). Walkthrough has the details.
+  **VAULT DONE 2026-11-08:** import script run (secrets copied byte for
+  byte), all 4 ExternalSecrets SecretSynced, synced ORS key verified (ORS
+  answered 200), app pods untouched. Vault is now the source of truth for
+  openrouteservice, cloudflared-token, alertmanager-discord. Token tip: a
+  token typed into bash in a Windows console gets a trailing  (same 500);
+  easiest is `unset VAULT_TOKEN`, the CLI then uses ~/.vault-token from
+  `vault login`. Left, optional: local compose backup token (on the LXC),
+  Tailscale ACL tightening (allow-all still on; tag:vault), root-token revoke.
 - **Constraint (Roye 2026-11-06): the teacher gets the repos and deploys the
   k3s version himself, without our keys.** So everything that needs a key or
   Vault must stay optional and degrade gracefully (ORS -> straight lines,

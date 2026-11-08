@@ -243,3 +243,10 @@ Things that happened between sessions, to go through when we reach the topic.
    an ESO refresh (`kubectl annotate externalsecret ... force-sync=...`). The
    broken token never worked and expires by itself in 32 days.
    Lesson: pipe secrets between programs in bash, not PowerShell 5.1.
+4. **Same 500 with the root token, during the import.** Pasting the token
+   into `read` in bash inside a Windows console left a trailing `` (Enter
+   sends 
+ there). Fix that worked: `unset VAULT_TOKEN`, so the CLI uses
+   the token `vault login` saved in `~/.vault-token`. The script now trims
+   the token anyway. Then all 4 ExternalSecrets synced; the routes key
+   verified working (ORS 200).
