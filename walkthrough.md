@@ -12,8 +12,8 @@ This file is committed: no secrets, tokens, account IDs or internal IPs.
 | # | Topic | Status |
 |---|---|---|
 | 1 | The app and the 3 repos | done 2026-11-06 |
-| 2 | Docker images + compose | in progress 2026-11-08 |
-| 3 | Kubernetes basics: Pod / ReplicaSet / Deployment / Service / Ingress, probes | |
+| 2 | Docker images + compose | done 2026-11-08 |
+| 3 | Kubernetes basics: Pod / ReplicaSet / Deployment / Service / Ingress, probes | in progress 2026-11-08 |
 | 4 | Helm chart, template by template | |
 | 5 | Jenkins pipelines, stage by stage | |
 | 6 | GitOps with Argo CD | |
@@ -238,10 +238,13 @@ keys when needed (`vault operator generate-root`). Details in 11b.
    values.yaml defaults.
 4. *How does the backend find "postgres"?* Right: compose puts the project's
    services on one network and Docker's built-in DNS resolves service names.
-   In k3s, CoreDNS resolves Service names to the Service's stable ClusterIP
-   (the chart's name is `tripsync-postgres`; full name
-   `tripsync-postgres.tripsync.svc.cluster.local`), which keeps working when
-   pods are replaced and get new IPs.
+   In k3s, CoreDNS resolves Service names (full name
+   `<name>.tripsync.svc.cluster.local`): a normal Service (backend,
+   frontend, garage) -> its stable ClusterIP, which keeps working when pods
+   are replaced and get new IPs. *Correction (found in topic 3):*
+   `tripsync-postgres` is **headless** (`clusterIP: None`), so its name
+   resolves straight to the pod's current IP; the name stays stable, DNS
+   follows the pod.
 5. *What user does the frontend run as?* Roye: "the same, probably". No:
    `nginx:alpine` starts its master process as **root** (workers as user
    `nginx`), and the chart's frontend Deployment has no `securityContext`.
@@ -317,6 +320,15 @@ above the COPYs (cached layer).
   exist yet -> `ImagePullBackOff`). And the pod object exists before the
   pull: Argo syncs -> Deployment changes -> new pod created and scheduled ->
   that node's kubelet pulls -> container starts.
+
+**Final check (2026-11-08).** Both right: (1) Argo CD changes the
+Deployment as soon as it sees the commit, so an image not yet on Docker Hub
+-> the kubelet can't pull -> `ErrImagePull` / `ImagePullBackOff`. (2) Old
+pod keeps serving, new pod's migrate init container errors; fix with `git
+revert <the bad Deploy commit>`. Precision: revert adds a **new** commit
+undoing that one (history intact, Argo sees a normal commit); going back to
+an old hash would be `git reset`, which rewrites history: not on main.
+**Topic 2 done.**
 
 ## Collected for later topics
 
