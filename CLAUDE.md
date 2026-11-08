@@ -836,7 +836,9 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
   copies the 3 hand-made Secrets in without printing. To verify live: pods
   reaching a 100.x Tailscale IP through the node (expected to work: nodes run
   Tailscale, pod traffic is masqueraded).
-  Teacher doc: `docs/deploy-yourself.md` (quick path NOT yet tested end to end).
+  Teacher doc: `docs/deploy-yourself.md` (quick path TESTED 2026-11-08 on a
+  fresh k3s in Docker, no keys: app + photos work, routes 503 as designed;
+  doc now says install k3s with `--disable traefik`).
   **Live progress 2026-11-06:** Vault container up on Roye's unprivileged LXC
   ("vault", Docker in LXC on Proxmox), initialized (recovery keys + root token
   in Roye's password manager), auto-unseal via KMS works, reachable over

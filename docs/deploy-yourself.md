@@ -21,11 +21,18 @@ or leave the feature off.
 ## Quickest: the app on any cluster (about 10 minutes)
 
 Needs a cluster with an ingress-nginx controller and a default StorageClass
-(k3s has `local-path`).
+(k3s has `local-path`). Tested 2026-11-08 exactly as written, on a fresh
+single-node k3s (v1.31) with none of our keys: all pods Running in under a
+minute; register, trip, day, stop, photo upload + thumbnail all worked;
+routes answered 503 "Routing isn't set up" (the map then draws straight
+lines), as expected without an ORS key.
 
 ```bash
-# ingress-nginx, if the cluster has none (k3s ships Traefik; this chart
-# uses ingress-nginx annotations)
+# k3s ships Traefik, which takes ports 80/443; this chart uses ingress-nginx
+# annotations, so install k3s without it:
+curl -sfL https://get.k3s.io | sh -s - --disable traefik
+
+# ingress-nginx, if the cluster has none
 helm upgrade --install ingress-nginx ingress-nginx \
   --repo https://kubernetes.github.io/ingress-nginx -n ingress-nginx --create-namespace
 
@@ -35,7 +42,9 @@ helm upgrade --install tripsync tripsync-devops/k8s-helm/tripsync -n tripsync \
 kubectl -n tripsync get pods -w      # backend waits for the migrate init container
 ```
 
-Open the ingress controller's address (`kubectl -n ingress-nginx get svc`).
+Open the ingress controller's address (`kubectl -n ingress-nginx get svc`;
+on k3s it is the node's IP, port 80). Right after the pods turn Running, the
+ingress can answer 503 for a few seconds until it picks them up.
 Defaults that matter: images are the public Docker Hub images
 `swagarot/tripsync-backend` / `-frontend` (`values.yaml`); Garage stores
 photos inside the cluster; the nightly backup is off (it needs an
