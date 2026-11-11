@@ -81,7 +81,7 @@ helm upgrade --install tripsync k8s-helm/tripsync -n tripsync \
   --set postgres.storageClassName=local-path
 ```
 
-Step by step, tested on a fresh k3s with none of our keys:
+Step by step, tested on a fresh k3s with no keys:
 [docs/deploy-yourself.md](docs/deploy-yourself.md). It also lists every
 optional secret (routes, the public tunnel, Discord alerts) and what works
 without it.
