@@ -138,13 +138,13 @@
     <li><b>CI</b> in Jenkins: lint, unit tests against a real throwaway database, image build tagged with the commit SHA, push to Docker Hub.</li>
     <li><b>CD with GitOps</b>: Jenkins records the new image tag in git and <b>Argo CD</b>, running inside the cluster, makes the cluster match git.</li>
     <li><b>Infrastructure as code</b>: Terraform builds everything around the app on the homelab k3s cluster, and builds a complete AWS environment (VPC + EKS) that can be created and destroyed on demand.</li>
-    <li><b>Operations</b>: replicated storage, nightly backups with a tested restore, metrics, logs, dashboards and alerts delivered to Discord.</li>
+    <li><b>Operations</b>: replicated storage, nightly backups with a tested restore, secrets in HashiCorp Vault outside the cluster, metrics, logs, dashboards and alerts delivered to Discord.</li>
   </ul>
 
   <div class="stats">
     <div class="stat"><b>2</b><span>independent Jenkins pipelines</span></div>
     <div class="stat"><b>~90 s</b><span>from “Deploy” commit to running pods</span></div>
-    <div class="stat"><b>291</b><span>automated tests (225 backend, 66 frontend)</span></div>
+    <div class="stat"><b>301</b><span>automated tests (235 backend, 66 frontend)</span></div>
     <div class="stat"><b>57</b><span>AWS resources, created and destroyed by Terraform</span></div>
   </div>
 
@@ -156,6 +156,7 @@
     <tr><td>Containerisation</td><td>A Dockerfile per app (Gunicorn for Flask; nginx for the React build); <code>docker-compose.yml</code> for local development.</td></tr>
     <tr><td>Kubernetes deployment</td><td>The Helm chart <code>k8s-helm/tripsync</code>, deployed to k3s by Argo CD and to EKS by Jenkins.</td></tr>
     <tr><td>Infrastructure as code</td><td><code>terraform/k3s</code> (homelab add-ons) and <code>terraform/aws</code> (own VPC module and EKS).</td></tr>
+    <tr><td>Secrets management</td><td>HashiCorp Vault in its own container outside the cluster (AWS KMS auto-unseal), synced into Kubernetes by the External Secrets Operator; the chart generates its own secrets. Nothing secret in git.</td></tr>
     <tr><td>Monitoring; project context file</td><td>kube-prometheus-stack, Loki + Alloy, custom alerts and dashboard, Alertmanager → Discord; <code>CLAUDE.md</code> in <code>tripsync-devops</code>.</td></tr>
   </table>
 </section>
@@ -225,11 +226,12 @@
     <tr><td>Jenkins controller (LXC)</td><td>Jenkins UI and job configuration; 0 executors, so nothing builds on it.</td></tr>
     <tr><td>Jenkins agent (VM)</td><td>Runs every build: Docker, Helm, kubectl, git; label <code>k3s-agent</code>.</td></tr>
     <tr><td>NFS server</td><td>Nightly backup target (<code>nfs-client</code> StorageClass).</td></tr>
+    <tr><td>Vault (LXC, Docker)</td><td>HashiCorp Vault 2.0.4 for the external secrets, outside k3s on purpose; reachable over Tailscale only; unseals itself with an AWS KMS key.</td></tr>
   </table>
-  <p>Admin access (Jenkins, Grafana, Argo CD, kubectl) is over <b>Tailscale</b> only. The public reaches only the app, through the Cloudflare Tunnel.</p>
+  <p>Admin access (Jenkins, Grafana, Argo CD, kubectl, Vault) is over <b>Tailscale</b> only. The public reaches only the app, through the Cloudflare Tunnel.</p>
 
   <h2>The cloud environment</h2>
-  <p>The same chart also runs on <b>AWS EKS</b> (eu-central-1), built from scratch by <code>terraform apply</code> (57 resources, about 20 minutes) and removed by <code>terraform destroy</code>. EKS is deliberately ephemeral: it is created for a test session and destroyed afterwards, since its control plane, NAT gateway, node and load balancer all bill by the hour. Each app pipeline has a <code>TARGET</code> parameter (<code>k3s</code> by default, or <code>eks</code>).</p>
+  <p>The same chart also runs on <b>AWS EKS</b> (eu-central-1), built from scratch by <code>terraform apply</code> (57 resources at the last full run, about 20 minutes) and removed by <code>terraform destroy</code>. EKS is deliberately ephemeral: it is created for a test session and destroyed afterwards, since its control plane, NAT gateway, node and load balancer all bill by the hour. Each app pipeline has a <code>TARGET</code> parameter (<code>k3s</code> by default, or <code>eks</code>). On EKS photos go to a real <b>S3 bucket</b>, with the backend pod getting its permissions through <b>EKS Pod Identity</b> (no access key anywhere), and the routing key can come from the same Vault over Tailscale. Both were added in November and are built but not yet run on EKS.</p>
 </section>
 
 <!-- ============================== 3 APP ============================== -->
@@ -243,15 +245,15 @@
       <ul>
         <li>Python 3.11, Flask (app factory), Gunicorn (1 worker, 4 threads).</li>
         <li>PostgreSQL 18 via SQLAlchemy; schema changes are Alembic migrations.</li>
-        <li>JWT auth (7-day token, long on purpose for offline use), scrypt password hashes, rate limits.</li>
-        <li>Photos in Garage (S3 API), re-encoded with Pillow, metadata/GPS stripped, served by signed URLs.</li>
+        <li>JWT auth with <b>per-device sessions</b>: a 7-day token (long on purpose for offline use) that is swapped for a new one on every online start; reusing an old one ends that session (stolen-token detection); &#8220;log out on all devices&#8221;. scrypt password hashes, rate limits.</li>
+        <li>Photos in S3-compatible storage (Garage on k3s, AWS S3 on EKS), re-encoded with Pillow, metadata/GPS stripped, served by signed URLs.</li>
         <li>Prometheus metrics at <code>/metrics</code> (cluster-internal only).</li>
       </ul>
     </div>
     <div>
       <h3>Frontend: tripsync-frontend</h3>
       <ul>
-        <li>React + Vite, built into static files served by nginx.</li>
+        <li>React + Vite, built into static files served by nginx, running as a non-root user.</li>
         <li>Installable PWA: a service worker keeps the app available offline.</li>
         <li>Offline-first store: every edit is a small “op”, applied on screen at once, queued in IndexedDB and sent in order when online.</li>
         <li>Map-first UI: Leaflet + MapLibre vector tiles, drag-and-drop itinerary, light/dark/dim themes.</li>
@@ -376,7 +378,7 @@
     <li>Installed by Terraform (<code>terraform/k3s/argocd.tf</code>): argo-cd chart 10.11.6 (Argo CD 3.5.6) without Dex or the notifications controller, and an <b>Application</b> <code>tripsync</code> via the argocd-apps chart.</li>
     <li>The Application points at <code>k8s-helm/tripsync</code> on <code>main</code> with <code>values.yaml</code> + <b><code>values-k3s.yaml</code></b>. That second file holds the two image tags and is the only file Jenkins edits. Its git history is the deploy history, and a rollback is <code>git revert</code>.</li>
     <li><b>Automated sync</b> with <b>prune</b> (things removed from git are deleted) and <b>self-heal</b> (manual changes in the cluster are undone). Up to 3 retries with backoff.</li>
-    <li>The devops repo is private; Argo CD reads it with a <b>read-only GitHub deploy key</b> kept only in a Kubernetes Secret created by hand.</li>
+    <li>Argo CD reads the devops repo with a <b>read-only GitHub deploy key</b> kept only in a Kubernetes Secret created by hand (set up while the repos were private; they are public since 12 November).</li>
     <li>The UI is private: a NodePort reachable over Tailscale, deliberately with no Ingress.</li>
     <li>Jenkins edits the tag with <code>yq</code>, commits only if something changed, and on a refused push (the other job pushed first) fetches, redoes the change and retries.</li>
   </ul>
@@ -410,12 +412,14 @@
   <table>
     <tr><th style="width:30%">Template</th><th>What it creates and why</th></tr>
     <tr><td>backend-deployment</td><td>Backend Deployment. A <code>migrate</code> init container runs <code>flask db upgrade</code> before the app starts, and a <code>storage-init</code> init container bootstraps Garage (layout, bucket, key; every step repeatable). Runs as non-root.</td></tr>
-    <tr><td>frontend-deployment</td><td>nginx serving the built PWA.</td></tr>
+    <tr><td>frontend-deployment</td><td>nginx serving the built PWA, as non-root (the <code>nginx-unprivileged</code> image, UID 101, <code>runAsNonRoot</code>). It keeps port 80 through the pod sysctl <code>net.ipv4.ip_unprivileged_port_start=0</code>, which applies only inside the pod's own network namespace.</td></tr>
     <tr><td>postgres</td><td>A <b>StatefulSet</b> with a headless Service and its own volume (2Gi).</td></tr>
     <tr><td>garage</td><td>Photo object storage (S3 API), a 1-node StatefulSet with a 10Gi volume.</td></tr>
     <tr><td>secret</td><td>Postgres password, JWT key and Garage keys, generated once and never in git.</td></tr>
     <tr><td>ingress</td><td><b>Two</b> Ingresses: <code>/api(/|$)(.*)</code> with a rewrite to the backend, and plain <code>/</code> to the frontend.</td></tr>
     <tr><td>backup</td><td>Nightly CronJob plus its NFS volume (chapter 8). Enabled per cluster by <code>backup.enabled</code>.</td></tr>
+    <tr><td>external-secrets</td><td>ExternalSecrets for the routing key and the tunnel token, read from Vault. Rendered only if the External Secrets Operator is installed (<code>.Capabilities</code>), with <code>creationPolicy: Orphan</code>, so the Secret survives if they are removed.</td></tr>
+    <tr><td>backend-serviceaccount</td><td>On EKS only (<code>s3.enabled</code>): the identity EKS Pod Identity gives the S3 role to.</td></tr>
     <tr><td>servicemonitor, prometheus-rules, grafana-dashboard</td><td>Scrape config, alert rules and a dashboard shipped with the app. They render only if the cluster has the Prometheus Operator, so EKS still installs.</td></tr>
   </table>
 
@@ -429,7 +433,7 @@
   <p class="q">Why migrations in an init container?</p>
   <p>The new schema is in place before new code starts. If a migration fails, the new pod never becomes ready and the old one keeps serving. During a rolling update old and new code run side by side, so migrations only add, with new columns nullable or defaulted (expand/contract). An advisory lock stops two pods from migrating at the same time.</p>
   <p class="q">Why generate secrets in the chart?</p>
-  <p>Nobody types them and they never appear in git. They are generated once and then kept: Postgres only reads its password on first start, and a new JWT key would log everyone out. The Secret has <code>helm.sh/resource-policy: keep</code>, so uninstalling never separates it from the data it unlocks. Secrets from outside (tunnel token, routing API key, Discord webhook, Argo CD deploy key) are created by hand with kubectl.</p>
+  <p>Nobody types them and they never appear in git. They are generated once and then kept: Postgres only reads its password on first start, and a new JWT key would log everyone out. The Secret has <code>helm.sh/resource-policy: keep</code>, so uninstalling never separates it from the data it unlocks. Secrets from outside (tunnel token, routing API key, Discord webhook) live in Vault and are synced in by External Secrets; without Vault they are created by hand with kubectl. The Argo CD deploy key is the one still made by hand.</p>
 
   <h2>Deployment, ReplicaSet, Pod</h2>
   <p>A Deployment is the desired state (“1 copy of backend:10cd680”). For each version of its pod template it creates a ReplicaSet, which keeps N identical pods running. A new image tag means a new ReplicaSet: the Deployment scales it up and the old one down to zero, and readiness probes keep traffic away from pods that aren't ready yet. We keep the last 3 ReplicaSets (<code>revisionHistoryLimit: 3</code>). With GitOps the real rollback is <code>git revert</code>, since self-heal would undo a manual <code>kubectl rollout undo</code>.</p>
@@ -447,9 +451,11 @@
     <tr><td>longhorn.tf</td><td>Longhorn 1.12.1, replicated block storage (2 replicas).</td></tr>
     <tr><td>monitoring.tf</td><td>kube-prometheus-stack (Prometheus, Alertmanager, Grafana, node exporter, kube-state-metrics) and the Longhorn alerts.</td></tr>
     <tr><td>logging.tf</td><td>Loki (single binary, 7-day retention) and Grafana Alloy as a DaemonSet.</td></tr>
-    <tr><td>tunnel.tf</td><td>cloudflared, 2 replicas on different workers, read-only root filesystem.</td></tr>
+    <tr><td>tunnel.tf</td><td>cloudflared, 2 replicas spread across the workers (preferred anti-affinity), read-only root filesystem.</td></tr>
     <tr><td>argocd.tf</td><td>Argo CD and the <code>tripsync</code> Application.</td></tr>
   </table>
+  <h2>terraform/vault and terraform/vault-config: secrets</h2>
+  <p><code>terraform/vault</code> creates the AWS KMS key that unseals Vault (kept permanently, deletion-protected, yearly rotation), an IAM user that may only use that key, and installs the External Secrets Operator in k3s. <code>terraform/vault-config</code> configures Vault itself: a KV store, read-only policies, the Kubernetes login (Vault checks a pod's ServiceAccount token with the k3s API), the <code>ClusterSecretStore</code>, Prometheus scraping and alerts for Vault, and its nightly backup. Vault runs from <code>vault/compose</code> on a separate homelab machine; <code>vault/README.md</code> is its runbook.</p>
   <p>Helm charts are installed by <code>helm_release</code> with values kept as plain YAML files (<code>monitoring/</code>, <code>argocd/</code>), so they can be read and diffed like any other config. Chart versions are pinned.</p>
 
   <h2>terraform/aws: VPC + EKS</h2>
@@ -476,6 +482,7 @@
   <ul>
     <li><b>Own VPC module</b>, written step by step instead of the community module: VPC with DNS support and hostnames, internet gateway, 2 public subnets, 1 private subnet, NAT gateway with an Elastic IP, route tables and associations, and subnet tags for load balancers. NAT can be switched off with <code>count</code>.</li>
     <li><b>EKS</b> through the official module: nodes in the private subnet; ingress-nginx, the namespace, the EBS CSI driver and an encrypted gp3 StorageClass all in Terraform, so a fresh cluster is ready for the first pipeline run with no manual steps. The account is on the Free Plan, so the node is a free-tier-eligible <code>c7i-flex.large</code> (<code>t3.medium</code> is refused).</li>
+    <li><b>Photos in S3</b> (<code>photos.tf</code>, added in November): a private bucket, an IAM role allowed only to read and write its objects, and an EKS Pod Identity association giving that role to the backend's ServiceAccount.</li>
     <li><b>Least privilege for Jenkins</b>: an IAM user that can only describe the cluster, plus an EKS access entry limited to edit rights in the <code>tripsync</code> namespace. The user and its key are made by hand, so the secret never lands in Terraform state.</li>
   </ul>
   <h3>Proven, clean slate both times</h3>
@@ -498,6 +505,7 @@
     <li>A CronJob at 03:30 (Asia/Jerusalem) with <code>concurrencyPolicy: Forbid</code>.</li>
     <li>An init container runs <code>pg_dump -Fc</code> (kept 14 days), then <code>rclone sync</code> mirrors the photo bucket, keeping deleted photos for 30 days in a dated folder.</li>
     <li>Target: an NFS volume (30Gi) marked to survive uninstall. A <code>LAST_RUN.txt</code> marker and the alert <i>TripsyncBackupMissing</i> (&gt;26 h since the last success).</li>
+    <li><b>Vault</b> is backed up as an encrypted Raft snapshot twice a night: next to Vault, and by a CronJob in k3s onto the NFS server (an unprivileged container can't mount NFS, so the cluster pulls the snapshot over Tailscale). Restoring needs the KMS key, so the snapshots are safe on NFS. Alert: <i>VaultBackupMissing</i>.</li>
     <li><b>Restore tested, not assumed</b>: the dump was restored into a scratch database with identical row counts and migration version. The restore guide is <code>docs/backup-restore.md</code>.</li>
   </ul>
 
@@ -560,8 +568,10 @@
     <tr><td>TripsyncBackupMissing</td><td>No successful backup for 26 h</td></tr>
     <tr><td>Longhorn: VolumeDegraded / Faulted / NodeNotReady / DiskFilling / MetricsMissing</td><td>A volume down to one copy or none; a storage node down; disk &gt; 70% (Longhorn stops at 75%); no Longhorn metrics</td></tr>
     <tr><td>ArgoCD: AppOutOfSync / AppUnhealthy / SyncFailed / MetricsMissing</td><td>Cluster differs from git for 15 min; app unhealthy for 10 min; a failed sync</td></tr>
+    <tr><td>VaultSealed / VaultDown / VaultBackupMissing</td><td>Vault restarted and could not auto-unseal; Prometheus can't reach it over Tailscale; no snapshot reached NFS for 26 h</td></tr>
+    <tr><td>AlloyRunawayReads</td><td>The log collector reads more than 50 MB/s from disk for 5 min (critical; see incident 5)</td></tr>
   </table>
-  <p>Every alert except the always-on Watchdog goes to <b>Discord</b>, grouped by namespace and alert, with “resolved” messages. The webhook URL lives only in a Kubernetes Secret.</p>
+  <p>Every alert except the always-on Watchdog goes to <b>Discord</b>, grouped by namespace and alert, with “resolved” messages. The webhook URL lives in Vault and is synced into a Kubernetes Secret.</p>
   <p class="q">Is it tested?</p>
   <p>Yes. The backend was scaled to 0: the alert was active in Alertmanager 3 minutes later (the target disappearing plus the 2-minute <code>for:</code>) and arrived in Discord. Scaled back up, it cleared, and the resolved message followed at the next group interval.</p>
   <p class="q">Why is every “…MetricsMissing” alert there?</p>
@@ -573,11 +583,11 @@
   <h1>11. Security</h1>
   <table>
     <tr><th style="width:26%">Area</th><th>Measures</th></tr>
-    <tr><td>Secrets</td><td>None in git. Generated by the chart and kept, or created by hand with kubectl. Jenkins credentials referenced by ID; the git token goes through GIT_ASKPASS; Argo CD has a read-only deploy key.</td></tr>
+    <tr><td>Secrets</td><td>None in git. The chart generates its own and keeps them; external ones live in HashiCorp Vault, outside the cluster (a compromised cluster doesn't take the secret store with it), auto-unsealed by AWS KMS and synced in by External Secrets with a 1-hour, read-only Vault token. Jenkins credentials referenced by ID; the git token goes through GIT_ASKPASS; Argo CD has a read-only deploy key.</td></tr>
     <tr><td>Exposure</td><td>Only the app is public, through the outbound tunnel. Admin UIs are on Tailscale only, and <code>/metrics</code> is excluded from the public Ingress.</td></tr>
-    <tr><td>Least privilege</td><td>Separate IAM user for Jenkins (describe cluster only) plus a namespace-scoped EKS access entry; Argo CD only reads git.</td></tr>
-    <tr><td>Containers</td><td>Non-root users (<code>runAsNonRoot</code>); cloudflared with a read-only root filesystem; pinned image versions.</td></tr>
-    <tr><td>Authentication</td><td>scrypt hashes; the same response time for an unknown email and a wrong password; rate limits on login, sign-up, search and uploads.</td></tr>
+    <tr><td>Least privilege</td><td>Separate IAM user for Jenkins (describe cluster only) plus a namespace-scoped EKS access entry; an IAM user that can only use the Vault KMS key; on EKS the backend gets its S3 role through Pod Identity, with no stored key; Vault backup tokens can only take snapshots; Argo CD only reads git.</td></tr>
+    <tr><td>Containers</td><td>Both app images run as non-root (backend UID 10001, frontend nginx UID 101) and the chart enforces it (<code>runAsNonRoot</code>); multi-stage frontend build; cloudflared with a read-only root filesystem; pinned image versions.</td></tr>
+    <tr><td>Authentication</td><td>Per-device sessions with token rotation and reuse detection, logout on one or all devices; scrypt hashes; the same response time for an unknown email and a wrong password; rate limits on login, sign-up, search and uploads.</td></tr>
     <tr><td>Authorisation</td><td>One module answers “can this user see this trip, with which role”. Not on the trip = 404 (IDs don't leak); a viewer trying to edit = 403. A test calls every endpoint as an outsider and as a viewer.</td></tr>
     <tr><td>Uploads</td><td>Images must decode, are re-encoded with metadata and GPS stripped, size limits apply, and they are served by signed, expiring URLs.</td></tr>
     <tr><td>SSRF</td><td>The one endpoint that fetches a URL is locked to Wikimedia: allow-listed prefix, redirects checked by hand, image types only, 5 MB cap. Tests include the cloud metadata address.</td></tr>
@@ -588,7 +598,7 @@
 <section class="chapter">
   <h1>12. Testing</h1>
   <div class="stats">
-    <div class="stat"><b>225</b><span>backend tests (pytest)</span></div>
+    <div class="stat"><b>235</b><span>backend tests (pytest)</span></div>
     <div class="stat"><b>66</b><span>frontend tests (Vitest)</span></div>
     <div class="stat"><b>2</b><span>EKS clean-slate runs</span></div>
     <div class="stat"><b>1</b><span>real restore, row counts matched</span></div>
@@ -596,9 +606,10 @@
   <ul>
     <li><b>Real database in CI.</b> Backend tests run against Postgres 18 after all migrations, the same schema as production, not SQLite.</li>
     <li><b>Isolation tests.</b> A second user calls every ID-taking endpoint on the first user's data and must get 404; viewers must get 403 on every write.</li>
-    <li><b>Query-count test.</b> Guards against N+1 queries: a trip page made 40 SQL queries for 5 days × 6 stops; it is now constant (≤ 10) whatever the trip's size.</li>
+    <li><b>Query-count test.</b> Guards against N+1 queries: a trip page made 40 SQL queries for 5 days × 6 stops; it is now constant (≤ 11) whatever the trip's size.</li>
     <li><b>Frontend logic.</b> The offline queue against a fake server, conflict handling, route caching, weather rules, expense splitting to the cent.</li>
     <li><b>End to end</b> (Playwright on the local compose stack): three users, invite while logged out, join, split expenses, a viewer on a phone, removal, export offline. Offline reload and sync were checked against the public URL.</li>
+    <li><b>Deploy-it-yourself test.</b> The quick path in <code>docs/deploy-yourself.md</code> was run as written on a fresh k3s with no keys: register, trip, stop, photo upload all worked; routes fell back to straight lines, as designed.</li>
     <li><b>Infrastructure tests.</b> A Longhorn failover (cordon a worker, delete pods), an alert fired end to end, a backup restored into a scratch database, two Terraform plans at once to prove the state lock.</li>
   </ul>
 </section>
@@ -622,7 +633,15 @@
   <h3>4. Grafana on the public internet</h3>
   <p>See chapter 9: a host-less Ingress matched the public hostname. It was found during the Argo CD work and closed by moving the admin UIs to private NodePorts.</p>
 
-  <h3>5. Smaller ones, each a line in the runbook</h3>
+  <h3>5. The log collector that took down storage</h3>
+  <p>On 6 November the k3s API timed out with SQLite &#8220;database is locked&#8221; errors and every Longhorn volume degraded. The cause was Grafana Alloy: close to its 256 MiB memory limit, the kernel kept evicting its pages and reading them back, about 900 MB/s from disk (549 GB read for 3 GB of logs), which saturated the Proxmox storage all machines share. A restart had only reset the growth the first time. Fix: Alloy upgraded, memory limit raised to 512 MiB with <code>GOMEMLIMIT</code>, and a new alert, <i>AlloyRunawayReads</i>.</p>
+  <p><b>Lesson:</b> a memory limit below what a process needs resident shows up as disk I/O, not as an out-of-memory kill; and on shared storage one noisy pod hurts everything.</p>
+
+  <h3>6. A storage engine missing on one worker</h3>
+  <p>After the cluster was shut down to add GPUs (2 November), Longhorn's engine binary was missing on one worker, so its volume replicas kept failing and rebuilding. <i>LonghornVolumeDegraded</i> fired for 4 days before anyone looked. Deleting that node's engine-image pod made Longhorn redeploy it; all volumes were healthy again within minutes.</p>
+  <p><b>Lesson:</b> again, an alert needs an owner; and after maintenance, drain and return one node at a time.</p>
+
+  <h3>7. Smaller ones, each a line in the runbook</h3>
   <ul>
     <li>A combined Ingress with a rewrite served HTML for JS files (white screen), hence the two Ingresses.</li>
     <li>Grafana's 384 Mi memory limit was too low (it sat at ~372 Mi, health timed out, 503s), so it was raised to 768 Mi.</li>
@@ -645,7 +664,10 @@
     <tr><td>Weeks 6–7 (16–17 Oct)</td><td>Multi-account backend on Postgres with migrations; CI tests on real Postgres; offline-first PWA; Cloudflare Tunnel, live in public; Garage photo storage; nightly backups with a tested restore; maps, routes, transit, weather, expenses.</td></tr>
     <tr><td>Sprint (28 Oct)</td><td>Shared trips and expense splitting; PDF / keepsake / Google Maps export; backup incident fixed; Terraform S3-native state locking; second full EKS run.</td></tr>
     <tr><td>31 Oct</td><td>GitOps with Argo CD; admin UIs made private; Jenkins polling fix; ReplicaSet history trimmed.</td></tr>
-    <tr><td>Nov</td><td>Documentation, presentation, final UI polish.</td></tr>
+    <tr><td>1 Nov</td><td>Documentation and presentation drafts.</td></tr>
+    <tr><td>6 Nov</td><td>Per-device sessions with token rotation; S3 + Pod Identity for EKS; HashiCorp Vault outside the cluster with KMS auto-unseal and External Secrets; storage incident fixed (Alloy).</td></tr>
+    <tr><td>8 Nov</td><td>Vault live as the source of the external secrets, with nightly snapshots to NFS; frontend moved to non-root nginx; the deploy-it-yourself guide tested on a fresh k3s.</td></tr>
+    <tr><td>12 Nov</td><td>READMEs and documentation updated; repositories made public.</td></tr>
   </table>
 </section>
 
@@ -660,6 +682,8 @@
     <tr><td>ingress-nginx is retired (last release March 2026)</td><td>Move to the Gateway API with a maintained controller.</td></tr>
     <tr><td>EKS has no monitoring and is push-deployed</td><td>Amazon Managed Prometheus for app metrics; Argo CD there only if EKS became long-lived.</td></tr>
     <tr><td>Images on Docker Hub; EKS pulls through NAT</td><td>ECR for the AWS path.</td></tr>
+    <tr><td>S3 + Pod Identity and EKS reading from Vault are built but not yet run on EKS</td><td>One more EKS session to prove them end to end.</td></tr>
+    <tr><td>Vault is a single instance; its root token is still kept</td><td>Revoke the root token (it can be regenerated from the recovery keys); tighten the Tailscale ACL to exactly the ports needed.</td></tr>
     <tr><td>In-memory rate limits are per pod</td><td>A shared store (Redis) if the backend scales out.</td></tr>
   </table>
 </section>
@@ -672,7 +696,9 @@
       <tr><th>Component</th><th>Version</th></tr>
       <tr><td>Argo CD (chart)</td><td>3.5.6 (10.11.6)</td></tr>
       <tr><td>kube-prometheus-stack</td><td>92.3.0</td></tr>
-      <tr><td>Loki (chart) / Alloy chart</td><td>3.6 (7.3.0) / 1.13.1</td></tr>
+      <tr><td>Loki (chart) / Alloy chart</td><td>3.6 (7.3.0) / 1.15.0</td></tr>
+      <tr><td>HashiCorp Vault</td><td>2.0.4</td></tr>
+      <tr><td>External Secrets Operator</td><td>2.14.0</td></tr>
       <tr><td>Longhorn</td><td>1.12.1</td></tr>
       <tr><td>ingress-nginx chart</td><td>4.15.1</td></tr>
       <tr><td>cloudflared</td><td>2026.10.1</td></tr>
@@ -694,10 +720,17 @@
 │                        Longhorn alerts
 ├── terraform/
 │   ├── k3s/             homelab platform
-│   └── aws/             VPC module + EKS
+│   ├── aws/             VPC module + EKS
+│   ├── vault/           KMS key, ESO
+│   └── vault-config/    Vault policies,
+│                        logins, backups
+├── vault/               Vault compose
+│                        + runbook
 ├── compose/, docker-compose.yml
-├── docs/                backup & restore
-└── CLAUDE.md            project context
+├── docs/                deploy yourself,
+│                        backup & restore
+├── CLAUDE.md            project context
+└── walkthrough.md       learning log
 
 tripsync-backend/   Flask API, tests,
                     Dockerfile, Jenkinsfile
