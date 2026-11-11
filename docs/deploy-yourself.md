@@ -9,14 +9,21 @@ few features that depend on outside services switch themselves off.
 | Secret | Needed? | Without it | Get your own |
 |---|---|---|---|
 | Postgres password, JWT signing key, Garage (photo storage) keys | made for you | nothing missing: the chart generates them on first install (`templates/secret.yaml`) | - |
-| `openrouteservice` (walk/bike/drive routes) | optional | the map joins a day's stops with straight lines and shows no travel times; transit routes still work (Transitous, no key) | free key at openrouteservice.org (sign up, Dashboard, token), then `kubectl -n tripsync create secret generic openrouteservice --from-literal=api-key=<key>` and restart the backend |
-| `cloudflared-token` (public HTTPS URL) | optional | no public URL; open the app through your ingress (LAN / NodePort). Offline mode and "install app" need HTTPS, everything else works on http | a free Cloudflare account with a domain; or skip it |
-| `alertmanager-discord` (alert delivery) | optional | alerts still fire and show in Alertmanager/Grafana, they just aren't posted to Discord | a Discord channel webhook, as Secret `webhook-url` in `monitoring` |
-| HashiCorp Vault (`terraform/vault`) | optional | the Secrets above are created by hand, as in this table | see `vault/README.md` |
+| `openrouteservice` (walk/bike/drive routes) | optional | the map joins a day's stops with straight lines and shows no travel times; transit routes still work (Transitous, no key) | free key at openrouteservice.org (sign up, Dashboard, token), then `kubectl -n tripsync create secret generic openrouteservice --from-literal=api-key=<key>` and `kubectl -n tripsync rollout restart deploy/tripsync-backend` |
+| `cloudflared-token` (public HTTPS URL) | optional | no public URL; open the app through your ingress (LAN / NodePort). Offline mode and "install app" need HTTPS, everything else works on http | a free Cloudflare account with a domain: create a tunnel, route its hostname to `http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80`, then `kubectl -n tripsync create secret generic cloudflared-token --from-literal=token=<tunnel token>` (the cloudflared Deployment comes from `terraform/k3s/tunnel.tf`); or skip it |
+| `alertmanager-discord` (alert delivery) | optional | alerts still fire and show in Alertmanager/Grafana, they just aren't posted to Discord | a Discord channel webhook: `kubectl -n monitoring create secret generic alertmanager-discord --from-literal=webhook-url=<url>` |
+| HashiCorp Vault (`vault/`, `terraform/vault`, `terraform/vault-config`) | optional | the Secrets above are created by hand, as in this table | see `vault/README.md` |
 | AWS (EKS, S3, KMS) | not for k3s | - | - |
 
 Nothing in this list is in git, and none of ours are shared: create your own
 or leave the feature off.
+
+## Before a cluster: the whole stack on a laptop
+
+With Docker and the three repos cloned side by side, `docker compose up
+--build` in `tripsync-devops` runs everything (Postgres, Garage, migrations,
+backend, frontend, and an nginx gateway standing in for the Ingress) at
+http://localhost:8080.
 
 ## Quickest: the app on any cluster (about 10 minutes)
 
@@ -48,7 +55,11 @@ ingress can answer 503 for a few seconds until it picks them up.
 Defaults that matter: images are the public Docker Hub images
 `swagarot/tripsync-backend` / `-frontend` (`values.yaml`); Garage stores
 photos inside the cluster; the nightly backup is off (it needs an
-`nfs-client` StorageClass, see `backup:` in `values.yaml`).
+`nfs-client` StorageClass, see `backup:` in `values.yaml`). The chart's
+monitoring objects (ServiceMonitor, alert rules, Grafana dashboard) and
+ExternalSecrets are only created when the cluster has their CRDs
+(Prometheus Operator, External Secrets Operator), so on a plain cluster they
+are skipped and nothing fails.
 
 ## The full homelab setup (what we run)
 
@@ -64,8 +75,12 @@ In order; each part is described in `docs/final/` and in the files' comments.
    (`default`) or pass `-var kubeconfig=...`.
 3. **Argo CD** deploys `k8s-helm/tripsync` with `values-k3s.yaml` from git
    (`argocd/apps.yaml`). Point `repoURL` at your own copy of
-   `tripsync-devops` and give Argo CD read access to it (a deploy key, Secret
-   `repo-tripsync-devops` in `argocd`; see CLAUDE.md "Argo CD sprint").
+   `tripsync-devops`. A public copy needs nothing more; for a private one,
+   add a read-only GitHub deploy key and give Argo CD its private half:
+   ```bash
+   kubectl -n argocd create secret generic repo-tripsync-devops      --from-literal=type=git      --from-literal=url=git@github.com:<you>/tripsync-devops.git      --from-file=sshPrivateKey=<path to the private key>
+   kubectl -n argocd label secret repo-tripsync-devops argocd.argoproj.io/secret-type=repository
+   ```
 4. **Jenkins** (optional, CI): two pipeline jobs from the app repos'
    `Jenkinsfile`s. Credentials they expect: Docker Hub (push), a GitHub token
    with write access to tripsync-devops (the "Deploy ..." commits); AWS keys
@@ -78,5 +93,7 @@ In order; each part is described in `docs/final/` and in the files' comments.
 - `kubectl -n tripsync get pods`: backend, frontend, postgres, garage Running.
 - `curl http://<ingress>/api/health/ready` -> `{"status": "ready"}`.
 - Register, make a trip, add a stop and a photo.
-- Argo CD UI (NodePort 30443): Application `tripsync` Synced / Healthy.
-- Grafana (NodePort 30300): the TripSync dashboard has data.
+- Argo CD UI (`https://<node>:30443`): Application `tripsync` Synced / Healthy.
+- Grafana (`http://<node>:30300`): the TripSync dashboard has data.
+- Tests without a cluster: `python -m pytest` in tripsync-backend,
+  `npm ci && npm test` in tripsync-frontend.
