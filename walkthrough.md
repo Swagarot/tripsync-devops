@@ -438,6 +438,73 @@ picks the RS; why a revert reuses an RS but a new deploy makes one; revert vs
 reset; why rollback can't cross a migration; what `kubectl get rs` shows
 during a revert.
 
+## Presentation prep (2026-11-12, talk on Friday 2026-11-13, 10 minutes)
+
+**Deck:** claude.ai Slides artifact "TripSync – Infrastructure"
+(https://claude.ai/artifact/EN832Ca6Z3pjyFS69wXSkB, private; downloads as
+.pptx/PDF; speaker notes with timings on every slide). Roye: general
+structure OK, refine tomorrow. Order: cover · the app (1-2 min live demo) ·
+three repos · the whole platform (infra map) · inside the k3s cluster ·
+CI/CD (Jenkins builds, Argo CD deploys) · GitOps statement · homelab stack ·
+hybrid k3s vs EKS · **closing live demo: Argo CD rollback with git revert**.
+Roye's changes: no incidents in the talk (not relevant); closing = rollback
+demo, not "Questions?"; more Kubernetes detail (Deployments, StatefulSets,
+DaemonSets) -> the "Inside the k3s cluster" slide. Open: maybe switch the
+demo's revert line to the simpler `git log --oneline -3` + `git revert
+--no-edit <hash>` (offered, not decided). Caveat in the hybrid slide's
+notes: S3 + Pod Identity and EKS -> Vault are coded but not yet run on EKS.
+Roye practiced the revert himself (8e13e51 Revert, 26febfb "Reapply" =
+git's name for a revert of a revert); production back on 16b59c8.
+
+**Questions Roye asked while building it (answers to remember).**
+- *Does Longhorn only hold Garage?* No: every volume the cluster needs to
+  run: Postgres (2 Gi), Garage (10 Gi), Prometheus (8 Gi), Loki (5 Gi),
+  Alertmanager (1 Gi), each as 2 copies, one per worker. Only the backups
+  (TripSync 30 Gi, Vault 1 Gi) are on the NFS server (`nfs-client`), on
+  purpose outside Longhorn.
+- *How does cloudflared reach the ingress?* The 2 cloudflared pods open
+  **outbound** connections to Cloudflare and keep them open; a browser
+  connects to Cloudflare (which holds the HTTPS certificate), Cloudflare
+  sends the request down those connections, and cloudflared forwards it to
+  `ingress-nginx-controller.ingress-nginx.svc:80` (route set in the
+  Cloudflare dashboard); then the normal path (/api -> backend, rest ->
+  frontend). Nothing connects in: no open ports.
+- *Why `--no-edit`?* It only skips the editor for the revert commit's
+  message (on Windows often Vim: getting stuck in it live is the classic
+  demo failure); the default message `Revert "Deploy backend ..."` is used.
+  It changes nothing about what gets reverted.
+- *Why `$(git log -1 --format=%h --grep="Deploy backend")`?* To avoid typing
+  a hash live: `--grep` keeps commits whose message contains "Deploy
+  backend", `-1` the newest, `--format=%h` prints only its short hash, `$()`
+  puts it into the revert command. It also matches "Revert ..."/"Reapply
+  ..." commits, which is fine: it always undoes the latest backend change.
+- *"Isn't there one Postgres on each worker, 2 total?"* No: **one Postgres
+  pod** (StatefulSet, replicas 1; on k8sworker2 at the time). What's on both
+  workers is its **volume**: 2 Longhorn replicas, every write goes to both.
+  Worker dies -> Kubernetes restarts `tripsync-postgres-0` on the other
+  worker, Longhorn attaches the copy already there, ~1 min downtime, no data
+  lost. Two Postgres processes can't share a data directory (corruption);
+  2 real instances = database replication (primary + standby, own data each,
+  e.g. CloudNativePG): listed, deliberately not built.
+- *"So if worker1 needs the DB it goes through worker2?"* Pods need it, not
+  nodes. A pod connects to the name `tripsync-postgres`, DNS gives the pod's
+  current IP, and pod IPs are reachable from every node (k3s's flannel
+  overlay network): same node = local, else across the LAN (well under a
+  millisecond). A user request already crosses nodes (cloudflared on worker1
+  -> backend and Postgres on worker2), and Longhorn sends every write to the
+  replica on the other worker too. Nodes are just capacity; Services and the
+  pod network hide where things run.
+- *"So the Postgres pod and volume don't matter, everything's in Longhorn?"*
+  Half right. The pod barely matters (disposable, recreated in ~1 min). The
+  Postgres volume **is** a Longhorn volume (not "also saved to" it); losing
+  one copy doesn't matter. But a bad DELETE, a broken migration or
+  corruption hits **both** copies instantly: that's what the nightly NFS
+  backup is for (14 days). Line for the talk: "replicas protect against
+  losing a machine, the backup protects against losing the data itself."
+- Noticed: both cloudflared pods were on k8sworker1 (anti-affinity is only
+  *preferred*). Fix offered: `kubectl -n tripsync rollout restart deployment
+  cloudflared` (replaced one at a time, site stays up). Not done yet.
+
 ## Collected for later topics
 
 Things that happened between sessions, to go through when we reach the topic.
