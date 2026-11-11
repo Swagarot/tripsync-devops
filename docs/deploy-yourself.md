@@ -1,8 +1,8 @@
 # Deploying TripSync yourself (k3s)
 
-For someone with the three repositories and their own Kubernetes cluster,
-but none of our API keys or accounts. The whole stack runs without them; a
-few features that depend on outside services switch themselves off.
+For deploying from the three repositories onto your own Kubernetes cluster,
+with no API keys or accounts. The whole stack runs without them; a few
+features that depend on outside services switch themselves off.
 
 ## What needs a key, and what happens without it
 
@@ -15,8 +15,7 @@ few features that depend on outside services switch themselves off.
 | HashiCorp Vault (`vault/`, `terraform/vault`, `terraform/vault-config`) | optional | the Secrets above are created by hand, as in this table | see `vault/README.md` |
 | AWS (EKS, S3, KMS) | not for k3s | - | - |
 
-Nothing in this list is in git, and none of ours are shared: create your own
-or leave the feature off.
+Nothing in this list is in git: create your own or leave the feature off.
 
 ## Before a cluster: the whole stack on a laptop
 
@@ -29,7 +28,7 @@ http://localhost:8080.
 
 Needs a cluster with an ingress-nginx controller and a default StorageClass
 (k3s has `local-path`). Tested 2026-11-08 exactly as written, on a fresh
-single-node k3s (v1.31) with none of our keys: all pods Running in under a
+single-node k3s (v1.31) with no keys: all pods Running in under a
 minute; register, trip, day, stop, photo upload + thumbnail all worked;
 routes answered 503 "Routing isn't set up" (the map then draws straight
 lines), as expected without an ORS key.
@@ -61,7 +60,7 @@ ExternalSecrets are only created when the cluster has their CRDs
 (Prometheus Operator, External Secrets Operator), so on a plain cluster they
 are skipped and nothing fails.
 
-## The full homelab setup (what we run)
+## The full homelab setup
 
 In order; each part is described in `docs/final/` and in the files' comments.
 
@@ -70,7 +69,7 @@ In order; each part is described in `docs/final/` and in the files' comments.
    `/var/lib/longhorn` and `open-iscsi` on each worker.
 2. **`terraform/k3s`**: Longhorn, kube-prometheus-stack, Loki + Alloy,
    cloudflared, Argo CD and the TripSync Application. Before `init`, change
-   the S3 state backend in `backend.tf` (our bucket is private) or delete the
+   the S3 state backend in `backend.tf` to a bucket of your own, or delete the
    `backend` block to keep the state locally. Set the kubeconfig context name
    (`default`) or pass `-var kubeconfig=...`.
 3. **Argo CD** deploys `k8s-helm/tripsync` with `values-k3s.yaml` from git
