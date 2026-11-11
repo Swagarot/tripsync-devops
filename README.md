@@ -135,4 +135,4 @@ curl http://<ingress address>/api/health/ready     # {"status": "ready"}
 - [docs/deploy-yourself.md](docs/deploy-yourself.md): deploy on your own cluster
 - [docs/backup-restore.md](docs/backup-restore.md): nightly backup and how to restore
 - [vault/README.md](vault/README.md): the Vault setup and runbook
-- [docs/final/](docs/final/): the project documentation (PDF) and presentation
+- [docs/final/](docs/final/): the project documentation (PDF, and the HTML it is printed from)

@@ -910,6 +910,9 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
    timings on every slide): https://claude.ai/artifact/EN832Ca6Z3pjyFS69wXSkB
    Caveat in its notes: S3 + Pod Identity and EKS->Vault are coded but not
    yet run on EKS.
+   The old 21-slide `docs/final/TripSync-Presentation.pptx` was removed
+   2026-11-12 (outdated; still in git history). Add the new deck's .pptx
+   export there once it's final.
    **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
    case we'll edit them"), in `docs/final/`: `documentation.html` -> printed to
    `TripSync-Documentation.pdf` with headless Chrome (command at the top of the
