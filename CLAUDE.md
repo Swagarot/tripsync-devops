@@ -902,7 +902,15 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
    topic.** Roye asked (2026-11-06): cover AWS (EKS) in every topic (what is
    different there), and log any change made to AWS in walkthrough.md's
    "AWS state and changes" section.
-2. **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
+2. **PRESENTATION Friday 2026-11-13, 10 minutes (Roye, 2026-11-12):** a
+   simpler deck replaces the 21-slide one for the talk: 10 slides, 1-2 min
+   live app demo, then infrastructure (3 repos, full infra map, Jenkins ->
+   Argo CD, GitOps revert, k3s stack, k3s vs EKS, incidents). Built as a
+   claude.ai Slides artifact (downloads as .pptx/PDF; speaker notes with
+   timings on every slide): https://claude.ai/artifact/EN832Ca6Z3pjyFS69wXSkB
+   Caveat in its notes: S3 + Pod Identity and EKS->Vault are coded but not
+   yet run on EKS.
+   **Final document + PowerPoint: first drafts DONE 2026-11-01** (Roye: "worst
    case we'll edit them"), in `docs/final/`: `documentation.html` -> printed to
    `TripSync-Documentation.pdf` with headless Chrome (command at the top of the
    HTML; edit the HTML, then reprint), and `TripSync-Presentation.pptx` (21
