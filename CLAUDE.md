@@ -904,7 +904,7 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
    topic.** Roye asked (2026-11-06): cover AWS (EKS) in every topic (what is
    different there), and log any change made to AWS in walkthrough.md's
    "AWS state and changes" section.
-2. **PRESENTATION Friday 2026-11-13, 10 minutes (Roye, 2026-11-12):** a
+2. **PRESENTATION Friday 2026-11-13, 10-15 minutes (Roye, 2026-11-12):** a
    simpler deck replaces the 21-slide one for the talk: 10 slides, 1-2 min
    live app demo, then infrastructure (3 repos, full infra map, Jenkins ->
    Argo CD, GitOps revert, k3s stack, k3s vs EKS, incidents). Built as a
@@ -912,6 +912,14 @@ covers these too. Every AWS change goes into walkthrough.md's AWS log.
    timings on every slide): https://claude.ai/artifact/EN832Ca6Z3pjyFS69wXSkB
    Caveat in its notes: S3 + Pod Identity and EKS->Vault are coded but not
    yet run on EKS.
+   State end of 2026-11-12: deck is 8 slides (k3s stack slide and GitOps
+   slogan slide cut; cloudflared shown as a DaemonSet). Talk notes artifact
+   (rehearsal sheet: script, fixes, if-asked answers):
+   https://claude.ai/artifact/VBsfydZS7RsjEVr774PK9r . First full voice run
+   done: ~13-15 min incl. a live rollback both ways (worked). Roye wants
+   feedback on understanding, not wording; concept points left: Jenkins
+   polls because nothing can reach it inbound (it has outbound internet),
+   and Jenkins polls every 5 min vs Argo CD every ~1 min.
    The old 21-slide `docs/final/TripSync-Presentation.pptx` was removed
    2026-11-12 (outdated; still in git history). Add the new deck's .pptx
    export there once it's final.
