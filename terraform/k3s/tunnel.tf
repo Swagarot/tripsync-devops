@@ -20,7 +20,15 @@
 # before applying (same pattern as the Alertmanager Discord webhook):
 #   kubectl --context default -n tripsync create secret generic cloudflared-token \
 #     --from-literal=token='<token from the dashboard>'
-resource "kubernetes_deployment_v1" "cloudflared" {
+#
+# A DaemonSet: one connector on every worker (the control node's NoSchedule
+# taint keeps it off there, so 2 today). Cloudflare spreads requests over all
+# connectors of a tunnel, so losing a worker doesn't take the site offline.
+# It used to be a Deployment with 2 replicas and *preferred* anti-affinity:
+# after node trouble both pods ended up on one worker (2026-11-12), and that
+# worker was then a single point of failure. A DaemonSet can't do that.
+# Updates replace one node's pod at a time, so the other keeps serving.
+resource "kubernetes_daemon_set_v1" "cloudflared" {
   metadata {
     name      = "cloudflared"
     namespace = kubernetes_namespace.tripsync.metadata[0].name
@@ -28,12 +36,15 @@ resource "kubernetes_deployment_v1" "cloudflared" {
   }
 
   spec {
-    # Two connectors for the same tunnel: Cloudflare spreads requests over
-    # both, so losing one pod (or one worker) doesn't take the site offline.
-    replicas = 2
-
     selector {
       match_labels = { app = "cloudflared" }
+    }
+
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_unavailable = 1
+      }
     }
 
     template {
@@ -42,21 +53,6 @@ resource "kubernetes_deployment_v1" "cloudflared" {
       }
 
       spec {
-        # Prefer putting the two replicas on different workers.
-        affinity {
-          pod_anti_affinity {
-            preferred_during_scheduling_ignored_during_execution {
-              weight = 100
-              pod_affinity_term {
-                topology_key = "kubernetes.io/hostname"
-                label_selector {
-                  match_labels = { app = "cloudflared" }
-                }
-              }
-            }
-          }
-        }
-
         container {
           name  = "cloudflared"
           image = "cloudflare/cloudflared:2026.10.1"

@@ -458,7 +458,7 @@
     <tr><td>longhorn.tf</td><td>Longhorn 1.12.1, replicated block storage (2 replicas).</td></tr>
     <tr><td>monitoring.tf</td><td>kube-prometheus-stack (Prometheus, Alertmanager, Grafana, node exporter, kube-state-metrics) and the Longhorn alerts.</td></tr>
     <tr><td>logging.tf</td><td>Loki (single binary, 7-day retention) and Grafana Alloy as a DaemonSet.</td></tr>
-    <tr><td>tunnel.tf</td><td>cloudflared, 2 replicas spread across the workers (preferred anti-affinity), read-only root filesystem.</td></tr>
+    <tr><td>tunnel.tf</td><td>cloudflared as a <b>DaemonSet</b>: one connector on each worker (the control node is tainted, so 2 today), read-only root filesystem. It was a 2-replica Deployment until both pods once landed on the same worker; a DaemonSet can't do that.</td></tr>
     <tr><td>argocd.tf</td><td>Argo CD and the <code>tripsync</code> Application.</td></tr>
   </table>
   <h2>terraform/vault and terraform/vault-config: secrets</h2>
@@ -529,7 +529,7 @@
 <section class="chapter">
   <h1>9. Networking and exposure</h1>
   <h2>Public: Cloudflare Tunnel</h2>
-  <p>cloudflared opens an <b>outbound</b> connection to Cloudflare; visitors connect to Cloudflare over HTTPS and requests come back down that connection to ingress-nginx. No router ports are open, no public IP is needed, and HTTPS (required for the service worker and app install) comes for free. Two replicas on different workers connect to two Cloudflare edges.</p>
+  <p>cloudflared opens an <b>outbound</b> connection to Cloudflare; visitors connect to Cloudflare over HTTPS and requests come back down that connection to ingress-nginx. No router ports are open, no public IP is needed, and HTTPS (required for the service worker and app install) comes for free. cloudflared runs as a DaemonSet, one connector on each worker, so losing a worker never takes the tunnel down.</p>
   <p>Because every request now arrives from a cloudflared pod, the backend's rate limits key on <code>CF-Connecting-IP</code>, which Cloudflare sets and a client cannot forge through the tunnel.</p>
 
   <h2>Private: Tailscale + NodePorts</h2>

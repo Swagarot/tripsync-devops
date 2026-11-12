@@ -502,8 +502,15 @@ git's name for a revert of a revert); production back on 16b59c8.
   backup is for (14 days). Line for the talk: "replicas protect against
   losing a machine, the backup protects against losing the data itself."
 - Noticed: both cloudflared pods were on k8sworker1 (anti-affinity is only
-  *preferred*). Fix offered: `kubectl -n tripsync rollout restart deployment
-  cloudflared` (replaced one at a time, site stays up). Not done yet.
+  *preferred*). **Fixed 2026-11-12 by making cloudflared a DaemonSet**
+  (Roye: "much easier to explain, it makes more sense"). A DaemonSet runs
+  one pod on every eligible node; the control node's NoSchedule taint keeps
+  it off there, so exactly one connector per worker (2 today; a 3rd worker =
+  a 3rd pod = a 3rd connector, since each pod is one connector). Applied in
+  two steps (DaemonSet first, then remove the Deployment) so the tunnel
+  never dropped. Talk answer: "a DaemonSet, because I want one connector
+  per worker; a Deployment's spreading is only a preference, and I saw both
+  pods land on the same node."
 
 ## Collected for later topics
 

@@ -277,8 +277,10 @@ Week 7 (2026-10-16, built by Claude, **explanation pending**), frontend `dd96e9b
 - Backend `3ebfba2`: rate limit keyed on `CF-Connecting-IP` when present (all
   tunnel traffic arrives from cloudflared pods). Accepted gap: LAN/Tailscale
   clients could spoof that header.
-- Cloudflare Tunnel: `terraform/k3s/tunnel.tf` (cloudflared 2026.10.1, 2
-  replicas, anti-affinity, `/ready` liveness, read-only root FS), token from
+- Cloudflare Tunnel: `terraform/k3s/tunnel.tf` (cloudflared 2026.10.1,
+  **DaemonSet since 2026-11-12**: one connector per worker, 2 today; it was a
+  2-replica Deployment with preferred anti-affinity until both pods ended up
+  on k8sworker1; `/ready` liveness, read-only root FS), token from
   Secret `cloudflared-token` (key `token`, ns `tripsync`, created by hand). Remotely
   managed tunnel; public hostname route in the dashboard ->
   `http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80`.
@@ -1107,7 +1109,9 @@ the ID exists.
 **Cloudflare Tunnel.** cloudflared connects OUT to Cloudflare; visitors reach
 Cloudflare over HTTPS and requests come back down that connection: no router
 ports, no public IP. HTTPS was required for the service worker (offline) and app
-install. 2 replicas on different workers. Behind the tunnel all requests come
+install. A DaemonSet: one connector on each worker, so losing a worker never
+takes the tunnel down (as a Deployment both pods once landed on the same
+worker). Behind the tunnel all requests come
 from cloudflared pods, so rate limits use CF-Connecting-IP (set by Cloudflare,
 not forgeable through it).
 
